@@ -32,6 +32,12 @@ pub struct KeymapTrie {
     pub root: KeyTrieNode,
 }
 
+impl Default for KeymapTrie {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl KeymapTrie {
     pub fn new() -> Self {
         Self {
@@ -43,20 +49,22 @@ impl KeymapTrie {
     /// 比如将 `["v", "l"]` 绑定到某个 Action
     pub fn insert(&mut self, keys: &[KeyEvent], action: Action) {
         let mut current = &mut self.root;
-        
+
         for (i, key) in keys.iter().enumerate() {
             let is_last = i == keys.len() - 1;
-            
+
             if !matches!(current, KeyTrieNode::Branch(_)) {
                 *current = KeyTrieNode::Branch(HashMap::new());
             }
-            
+
             if let KeyTrieNode::Branch(children) = current {
                 if is_last {
                     children.insert(key.clone(), KeyTrieNode::Leaf(action.clone()));
                     break;
                 } else {
-                    current = children.entry(key.clone()).or_insert_with(|| KeyTrieNode::Branch(HashMap::new()));
+                    current = children
+                        .entry(key.clone())
+                        .or_insert_with(|| KeyTrieNode::Branch(HashMap::new()));
                 }
             }
         }
@@ -154,7 +162,10 @@ mod tests {
         // 绑定 'l' 为 MoveRight
         trie.insert(&[KeyEvent::new("l")], Action::MoveRight);
         // 绑定 'v', 'l' 为特殊动作（随便举例，方便测试深层路径）
-        trie.insert(&[KeyEvent::new("v"), KeyEvent::new("l")], Action::EnterVisualLine);
+        trie.insert(
+            &[KeyEvent::new("v"), KeyEvent::new("l")],
+            Action::EnterVisualLine,
+        );
 
         let mut parser = KeyParser::new(trie);
 
@@ -164,10 +175,16 @@ mod tests {
 
         // 2. 测试带数字前缀的单键: "5", "l"
         assert_eq!(parser.handle_key(KeyEvent::new("5")), ParseResult::Pending);
-        assert_eq!(parser.handle_key(KeyEvent::new("l")), ParseResult::Matched(Action::MoveRight, 5));
+        assert_eq!(
+            parser.handle_key(KeyEvent::new("l")),
+            ParseResult::Matched(Action::MoveRight, 5)
+        );
 
         // 3. 测试多键组合: "v", "l"
         assert_eq!(parser.handle_key(KeyEvent::new("v")), ParseResult::Pending);
-        assert_eq!(parser.handle_key(KeyEvent::new("l")), ParseResult::Matched(Action::EnterVisualLine, 1));
+        assert_eq!(
+            parser.handle_key(KeyEvent::new("l")),
+            ParseResult::Matched(Action::EnterVisualLine, 1)
+        );
     }
 }

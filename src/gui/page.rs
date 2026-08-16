@@ -1,12 +1,7 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Page {
+    #[default]
     Navigation,
     MainInterface,
     Editor,
-}
-
-impl Default for Page {
-    fn default() -> Self {
-        Self::Navigation
-    }
 }
