@@ -47,22 +47,16 @@ impl KeymapTrie {
         for (i, key) in keys.iter().enumerate() {
             let is_last = i == keys.len() - 1;
             
-            match current {
-                KeyTrieNode::Branch(children) => {
-                    if is_last {
-                        children.insert(key.clone(), KeyTrieNode::Leaf(action.clone()));
-                    } else {
-                        current = children.entry(key.clone()).or_insert_with(|| KeyTrieNode::Branch(HashMap::new()));
-                    }
-                }
-                KeyTrieNode::Leaf(_) => {
-                    // 覆盖之前的短序列
-                    if !is_last {
-                        *current = KeyTrieNode::Branch(HashMap::new());
-                        if let KeyTrieNode::Branch(ref mut new_children) = current {
-                            current = new_children.entry(key.clone()).or_insert_with(|| KeyTrieNode::Branch(HashMap::new()));
-                        }
-                    }
+            if !matches!(current, KeyTrieNode::Branch(_)) {
+                *current = KeyTrieNode::Branch(HashMap::new());
+            }
+            
+            if let KeyTrieNode::Branch(children) = current {
+                if is_last {
+                    children.insert(key.clone(), KeyTrieNode::Leaf(action.clone()));
+                    break;
+                } else {
+                    current = children.entry(key.clone()).or_insert_with(|| KeyTrieNode::Branch(HashMap::new()));
                 }
             }
         }
