@@ -178,6 +178,41 @@ pub fn get_all_command_help_items() -> Vec<CommandHelpItem> {
             category: "转场特效",
         },
         CommandHelpItem {
+            name: ":text",
+            alias: ":subtitle",
+            args: "<文本内容>",
+            description: "为当前切片添加或设置屏幕字幕与多行富文本 (如 :text 欢迎观看)",
+            category: "字幕文本",
+        },
+        CommandHelpItem {
+            name: ":fontsize",
+            alias: "",
+            args: "<字号像素>",
+            description: "设置当前切片字幕的字体大小 (如 :fontsize 32)",
+            category: "字幕文本",
+        },
+        CommandHelpItem {
+            name: ":textcolor",
+            alias: ":color_text",
+            args: "<颜色/十六进制>",
+            description: "设置当前切片字幕的字体颜色 (如 :textcolor yellow, :textcolor #ffff00)",
+            category: "字幕文本",
+        },
+        CommandHelpItem {
+            name: ":bgbox",
+            alias: ":textbg",
+            args: "<on|off>",
+            description: "开启或关闭当前切片字幕的半透明气泡底框 (如 :bgbox on)",
+            category: "字幕文本",
+        },
+        CommandHelpItem {
+            name: ":clear_text",
+            alias: ":cleartext",
+            args: "",
+            description: "清除当前切片上的所有字幕与富文本覆盖",
+            category: "字幕文本",
+        },
+        CommandHelpItem {
             name: ":fadein",
             alias: ":fade_in",
             args: "<秒数/时间>",
@@ -872,6 +907,75 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                             Theme::ACCENT_CYAN,
                         );
                     }
+
+                    // 字幕与文本覆盖渲染 (Text & Subtitle Overlay)
+                    if let Some(ref text_overlay) = sel_clip.text_overlay {
+                        if !text_overlay.is_empty() {
+                            let text_pos = match text_overlay.alignment {
+                                crate::effects::TextAlignment::BottomCenter => pos2(gizmo_rect.center().x, gizmo_rect.max.y - 28.0),
+                                crate::effects::TextAlignment::TopCenter => pos2(gizmo_rect.center().x, gizmo_rect.min.y + 28.0),
+                                crate::effects::TextAlignment::Center => gizmo_rect.center(),
+                                crate::effects::TextAlignment::BottomLeft => pos2(gizmo_rect.min.x + 24.0, gizmo_rect.max.y - 28.0),
+                                crate::effects::TextAlignment::BottomRight => pos2(gizmo_rect.max.x - 24.0, gizmo_rect.max.y - 28.0),
+                            };
+                            let align = match text_overlay.alignment {
+                                crate::effects::TextAlignment::BottomCenter | crate::effects::TextAlignment::TopCenter | crate::effects::TextAlignment::Center => egui::Align2::CENTER_CENTER,
+                                crate::effects::TextAlignment::BottomLeft => egui::Align2::LEFT_BOTTOM,
+                                crate::effects::TextAlignment::BottomRight => egui::Align2::RIGHT_BOTTOM,
+                            };
+
+                            let font_id = egui::FontId::proportional(text_overlay.font_size.clamp(12.0, 36.0));
+                            let text_color = Color32::from_rgba_unmultiplied(
+                                text_overlay.color_rgba[0],
+                                text_overlay.color_rgba[1],
+                                text_overlay.color_rgba[2],
+                                text_overlay.color_rgba[3],
+                            );
+
+                            // 计算文本包围盒与气泡底框
+                            let galley = painter.layout_no_wrap(text_overlay.content.clone(), font_id.clone(), text_color);
+                            let text_rect = align.anchor_size(text_pos, galley.size());
+
+                            if text_overlay.has_background {
+                                let bg_rect = text_rect.expand2(vec2(10.0, 6.0));
+                                let bg_color = Color32::from_rgba_unmultiplied(
+                                    text_overlay.bg_rgba[0],
+                                    text_overlay.bg_rgba[1],
+                                    text_overlay.bg_rgba[2],
+                                    text_overlay.bg_rgba[3],
+                                );
+                                painter.rect_filled(bg_rect, CornerRadius::same(5), bg_color);
+                                painter.rect_stroke(
+                                    bg_rect,
+                                    CornerRadius::same(5),
+                                    Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 40)),
+                                    egui::StrokeKind::Inside,
+                                );
+                            }
+
+                            // 描边效果
+                            if text_overlay.outline_width > 0.0 {
+                                let outline_color = Color32::from_rgba_unmultiplied(
+                                    text_overlay.outline_rgba[0],
+                                    text_overlay.outline_rgba[1],
+                                    text_overlay.outline_rgba[2],
+                                    text_overlay.outline_rgba[3],
+                                );
+                                for (dx, dy) in &[(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] {
+                                    painter.text(
+                                        text_pos + vec2(*dx * text_overlay.outline_width, *dy * text_overlay.outline_width),
+                                        align,
+                                        &text_overlay.content,
+                                        font_id.clone(),
+                                        outline_color,
+                                    );
+                                }
+                            }
+
+                            // 主体文字渲染
+                            painter.text(text_pos, align, &text_overlay.content, font_id, text_color);
+                        }
+                    }
                 }
             }
 
@@ -1448,6 +1552,46 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                                         ui.close();
                                     }
                                 });
+                                ui.menu_button("💬 文本与字幕", |ui| {
+                                    if ui.button("添加/编辑文本 (:text ...)").clicked() {
+                                        state.command_input = ":text 欢迎使用 VideoCut".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    ui.separator();
+                                    if ui.button("大字号 32px (:fontsize 32)").clicked() {
+                                        state.command_input = ":fontsize 32".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("中字号 24px (:fontsize 24)").clicked() {
+                                        state.command_input = ":fontsize 24".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("小字号 18px (:fontsize 18)").clicked() {
+                                        state.command_input = ":fontsize 18".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    ui.separator();
+                                    if ui.button("开启气泡底框 (:bgbox on)").clicked() {
+                                        state.command_input = ":bgbox on".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("关闭气泡底框 (:bgbox off)").clicked() {
+                                        state.command_input = ":bgbox off".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    ui.separator();
+                                    if ui.button("清除文本 (:clear_text)").clicked() {
+                                        state.command_input = ":clear_text".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                });
                                 if ui.button("🏷 添加局部锚点 (m)").clicked() {
                                     state.anchor_mark_session = Some(AnchorMarkSession {
                                         scope: AnchorScope::Local,
@@ -1957,6 +2101,25 @@ fn draw_clip_card(
             egui::FontId::proportional(9.0),
             Color32::WHITE,
         );
+    }
+
+    // 如果切片包含文本覆盖，绘制字幕角标
+    if let Some(ref text) = clip.text_overlay {
+        if !text.is_empty() {
+            let preview: String = text.content.chars().take(8).collect();
+            let label = if text.content.chars().count() > 8 {
+                format!("💬{}...", preview)
+            } else {
+                format!("💬{}", preview)
+            };
+            painter.text(
+                pos2(clip_rect.min.x + 8.0, clip_rect.max.y - 12.0),
+                egui::Align2::LEFT_BOTTOM,
+                label,
+                egui::FontId::proportional(10.0),
+                Theme::ACCENT_YELLOW,
+            );
+        }
     }
 }
 

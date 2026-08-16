@@ -558,6 +558,117 @@ impl VideoCutApp {
                     }
                 }
             }
+            "text" | "subtitle" => {
+                let content = if parts.len() > 1 {
+                    parts[1..].join(" ")
+                } else {
+                    String::new()
+                };
+                let track_idx = self.main_ui_state.selected_track_idx;
+                if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                    let playhead = FrameTime(self.main_ui_state.playhead_us);
+                    if let Some(clip) = track.clips.iter_mut().find(|c| {
+                        playhead >= c.timeline_start && playhead <= c.timeline_end()
+                    }) {
+                        if content.is_empty() {
+                            clip.text_overlay = None;
+                            self.main_ui_state.status_message = Some(format!("切片 '{}' 字幕文本已清除", clip.name));
+                        } else {
+                            if let Some(ref mut text) = clip.text_overlay {
+                                text.content = content.clone();
+                            } else {
+                                clip.text_overlay = Some(crate::effects::TextOverlayParams::new(content.clone()));
+                            }
+                            self.main_ui_state.status_message = Some(format!("切片 '{}' 字幕文本已设置为: \"{}\"", clip.name, content));
+                        }
+                    }
+                }
+            }
+            "fontsize" => {
+                let size: f32 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(24.0);
+                let track_idx = self.main_ui_state.selected_track_idx;
+                if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                    let playhead = FrameTime(self.main_ui_state.playhead_us);
+                    if let Some(clip) = track.clips.iter_mut().find(|c| {
+                        playhead >= c.timeline_start && playhead <= c.timeline_end()
+                    }) {
+                        if let Some(ref mut text) = clip.text_overlay {
+                            text.font_size = size.clamp(8.0, 120.0);
+                            self.main_ui_state.status_message = Some(format!("切片 '{}' 字幕字号已设置为 {:.0}px", clip.name, text.font_size));
+                        } else {
+                            let text = crate::effects::TextOverlayParams {
+                                font_size: size.clamp(8.0, 120.0),
+                                ..Default::default()
+                            };
+                            clip.text_overlay = Some(text);
+                            self.main_ui_state.status_message = Some(format!("切片 '{}' 字幕字号已设置为 {:.0}px", clip.name, size));
+                        }
+                    }
+                }
+            }
+            "textcolor" | "color_text" => {
+                let color_str = parts.get(1).copied().unwrap_or("white");
+                let rgba = match color_str.to_lowercase().as_str() {
+                    "yellow" | "#ffff00" => [255, 235, 59, 255],
+                    "red" | "#ff0000" => [244, 67, 54, 255],
+                    "green" | "#00ff00" => [76, 175, 80, 255],
+                    "cyan" | "#00ffff" => [0, 229, 255, 255],
+                    "blue" | "#0000ff" => [33, 150, 243, 255],
+                    "black" | "#000000" => [20, 20, 20, 255],
+                    _ => [255, 255, 255, 255],
+                };
+                let track_idx = self.main_ui_state.selected_track_idx;
+                if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                    let playhead = FrameTime(self.main_ui_state.playhead_us);
+                    if let Some(clip) = track.clips.iter_mut().find(|c| {
+                        playhead >= c.timeline_start && playhead <= c.timeline_end()
+                    }) {
+                        if let Some(ref mut text) = clip.text_overlay {
+                            text.color_rgba = rgba;
+                        } else {
+                            let text = crate::effects::TextOverlayParams {
+                                color_rgba: rgba,
+                                ..Default::default()
+                            };
+                            clip.text_overlay = Some(text);
+                        }
+                        self.main_ui_state.status_message = Some(format!("切片 '{}' 字幕颜色已设置为 {}", clip.name, color_str));
+                    }
+                }
+            }
+            "bgbox" | "textbg" => {
+                let on = parts.get(1).map(|s| *s == "on" || *s == "true" || *s == "1").unwrap_or(true);
+                let track_idx = self.main_ui_state.selected_track_idx;
+                if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                    let playhead = FrameTime(self.main_ui_state.playhead_us);
+                    if let Some(clip) = track.clips.iter_mut().find(|c| {
+                        playhead >= c.timeline_start && playhead <= c.timeline_end()
+                    }) {
+                        if let Some(ref mut text) = clip.text_overlay {
+                            text.has_background = on;
+                        } else {
+                            let text = crate::effects::TextOverlayParams {
+                                has_background: on,
+                                ..Default::default()
+                            };
+                            clip.text_overlay = Some(text);
+                        }
+                        self.main_ui_state.status_message = Some(format!("切片 '{}' 字幕底框已设置为: {}", clip.name, if on { "开启" } else { "关闭" }));
+                    }
+                }
+            }
+            "clear_text" | "cleartext" => {
+                let track_idx = self.main_ui_state.selected_track_idx;
+                if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                    let playhead = FrameTime(self.main_ui_state.playhead_us);
+                    if let Some(clip) = track.clips.iter_mut().find(|c| {
+                        playhead >= c.timeline_start && playhead <= c.timeline_end()
+                    }) {
+                        clip.text_overlay = None;
+                        self.main_ui_state.status_message = Some(format!("切片 '{}' 字幕文本已清除", clip.name));
+                    }
+                }
+            }
             "vol" | "volume" => {
                 if parts.len() > 1 {
                     if let Ok(v) = parts[1].parse::<f32>() {
@@ -2064,5 +2175,40 @@ mod tests {
         // 3. 清除转场 :transition none
         app.execute_command_line(":transition none");
         assert!(app.project_state.timeline.tracks[0].clips[0].transition_out.is_none());
+    }
+
+    #[test]
+    fn test_text_overlay_commands() {
+        let mut app = VideoCutApp::new_for_test();
+        let track = app.project_state.timeline.tracks.first_mut().unwrap();
+        track.clips.clear();
+        let clip = crate::timeline::Clip::new(crate::timeline::ClipId(1), "intro.mp4".into(), crate::timeline::AssetId(1), FrameTime(0), FrameTime(10_000_000));
+        track.add_clip(clip);
+
+        app.main_ui_state.playhead_us = 2_000_000;
+
+        // 1. 设置文本 :text 欢迎来到我的世界
+        app.execute_command_line(":text 欢迎来到我的世界");
+        let text1 = app.project_state.timeline.tracks[0].clips[0].text_overlay.as_ref().unwrap();
+        assert_eq!(text1.content, "欢迎来到我的世界");
+
+        // 2. 设置字号 :fontsize 32
+        app.execute_command_line(":fontsize 32");
+        let text2 = app.project_state.timeline.tracks[0].clips[0].text_overlay.as_ref().unwrap();
+        assert_eq!(text2.font_size, 32.0);
+
+        // 3. 设置文字颜色 :textcolor yellow
+        app.execute_command_line(":textcolor yellow");
+        let text3 = app.project_state.timeline.tracks[0].clips[0].text_overlay.as_ref().unwrap();
+        assert_eq!(text3.color_rgba, [255, 235, 59, 255]);
+
+        // 4. 设置底框 :bgbox off
+        app.execute_command_line(":bgbox off");
+        let text4 = app.project_state.timeline.tracks[0].clips[0].text_overlay.as_ref().unwrap();
+        assert!(!text4.has_background);
+
+        // 5. 清除文本 :clear_text
+        app.execute_command_line(":clear_text");
+        assert!(app.project_state.timeline.tracks[0].clips[0].text_overlay.is_none());
     }
 }

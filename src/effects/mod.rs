@@ -5,6 +5,7 @@ pub mod follow;
 pub mod mask;
 pub mod registry;
 pub mod speed;
+pub mod text_overlay;
 pub mod transition;
 
 pub use animation::*;
@@ -14,4 +15,5 @@ pub use follow::*;
 pub use mask::*;
 pub use registry::*;
 pub use speed::*;
+pub use text_overlay::*;
 pub use transition::*;

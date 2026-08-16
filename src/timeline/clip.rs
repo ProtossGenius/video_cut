@@ -93,6 +93,8 @@ pub struct Clip {
     pub color_grading: crate::effects::ColorGradingParams,
     /// 尾部接缝转场效果 (Transition to next adjacent clip)
     pub transition_out: Option<crate::effects::Transition>,
+    /// 字幕与多行富文本气泡覆盖 (Text & Subtitle Overlay)
+    pub text_overlay: Option<crate::effects::TextOverlayParams>,
 }
 
 impl Clip {
@@ -123,6 +125,7 @@ impl Clip {
             transform_offset: [0.0, 0.0],
             color_grading: crate::effects::ColorGradingParams::default(),
             transition_out: None,
+            text_overlay: None,
         }
     }
 
@@ -180,6 +183,11 @@ impl Clip {
 
     pub fn with_transition_out(mut self, transition: Option<crate::effects::Transition>) -> Self {
         self.transition_out = transition;
+        self
+    }
+
+    pub fn with_text_overlay(mut self, text: Option<crate::effects::TextOverlayParams>) -> Self {
+        self.text_overlay = text;
         self
     }
 
