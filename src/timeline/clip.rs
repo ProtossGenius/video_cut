@@ -97,6 +97,8 @@ pub struct Clip {
     pub text_overlay: Option<crate::effects::TextOverlayParams>,
     /// 动画与关键帧插值缓动曲线 (Easing Curve)
     pub easing_curve: crate::effects::EasingCurve,
+    /// 自动化属性关键帧包络轨道 (Automation Keyframe Track)
+    pub keyframe_track: Option<crate::effects::ClipKeyframeTrack>,
 }
 
 impl Clip {
@@ -129,6 +131,7 @@ impl Clip {
             transition_out: None,
             text_overlay: None,
             easing_curve: crate::effects::EasingCurve::default(),
+            keyframe_track: None,
         }
     }
 

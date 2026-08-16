@@ -227,6 +227,20 @@ pub fn get_all_command_help_items() -> Vec<CommandHelpItem> {
             category: "特效控制",
         },
         CommandHelpItem {
+            name: ":keyframe",
+            alias: ":kf",
+            args: "<vol|op|scale|rot> <value>",
+            description: "在当前播放头位置为当前切片打上属性自动化关键帧",
+            category: "特效控制",
+        },
+        CommandHelpItem {
+            name: ":clearkf",
+            alias: ":clear_keyframes",
+            args: "",
+            description: "清除当前切片上的所有自动化属性关键帧包络",
+            category: "特效控制",
+        },
+        CommandHelpItem {
             name: ":pip",
             alias: ":picture_in_picture",
             args: "<corner_br|tr|bl|tl | split_left|right|top|bottom | grid_tl|tr|bl|br | center | reset>",
@@ -1840,6 +1854,39 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                                         ui.close();
                                     }
                                 });
+                                ui.menu_button("📈 自动化属性关键帧", |ui| {
+                                    if ui.button("添加音量关键帧 100% (:kf vol 1.0)").clicked() {
+                                        state.command_input = ":keyframe vol 1.0".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("添加音量关键帧 0% (:kf vol 0.0)").clicked() {
+                                        state.command_input = ":keyframe vol 0.0".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("添加透明度关键帧 100% (:kf op 1.0)").clicked() {
+                                        state.command_input = ":keyframe op 1.0".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("添加透明度关键帧 0% (:kf op 0.0)").clicked() {
+                                        state.command_input = ":keyframe op 0.0".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("添加缩放关键帧 1.5x (:kf scale 1.5)").clicked() {
+                                        state.command_input = ":keyframe scale 1.5".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    ui.separator();
+                                    if ui.button("🗑 清除切片所有关键帧 (:clearkf)").clicked() {
+                                        state.command_input = ":clearkf".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                });
                                 if ui.button("🔊 音画分离至新音频轨 (:detach_audio)").clicked() {
                                     state.command_input = ":detach_audio".into();
                                     state.is_command_mode = true;
@@ -2403,6 +2450,36 @@ fn draw_clip_card(
                 egui::FontId::proportional(10.0),
                 Theme::ACCENT_YELLOW,
             );
+        }
+    }
+
+    // 绘制自动化关键帧包络折线与控制节点 (Automation Keyframe Envelopes & Nodes)
+    if let Some(ref kf_track) = clip.keyframe_track {
+        if !kf_track.points.is_empty() {
+            let mut prev_pt: Option<egui::Pos2> = None;
+            for pt in &kf_track.points {
+                let px = clip_rect.min.x + ((pt.offset_us as f32 / us_per_sec) * state.zoom_level).clamp(0.0, clip_rect.width());
+                let normalized_val = match kf_track.property {
+                    crate::effects::KeyframeProperty::Volume => (pt.value / 2.0).clamp(0.0, 1.0),
+                    crate::effects::KeyframeProperty::Opacity => pt.value.clamp(0.0, 1.0),
+                    crate::effects::KeyframeProperty::Scale => (pt.value / 3.0).clamp(0.0, 1.0),
+                    crate::effects::KeyframeProperty::Rotation => ((pt.value + 180.0) / 360.0).clamp(0.0, 1.0),
+                };
+                let py = clip_rect.max.y - normalized_val * (clip_rect.height() - 8.0) - 4.0;
+                let current_pos = pos2(px, py);
+
+                if let Some(p0) = prev_pt {
+                    painter.line_segment(
+                        [p0, current_pos],
+                        Stroke::new(1.8, Color32::from_rgb(0, 230, 255)),
+                    );
+                }
+                prev_pt = Some(current_pos);
+
+                // 绘制圆形高亮关键帧节点
+                painter.circle_filled(pos2(px, py), 3.5, Color32::from_rgb(255, 255, 100));
+                painter.circle_stroke(pos2(px, py), 3.5, Stroke::new(1.0, Color32::BLACK));
+            }
         }
     }
 }

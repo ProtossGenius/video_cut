@@ -88,3 +88,4 @@
 71. [x] **完成任务**：实装视频画中画与分屏排布模板引擎 (`:pip [corner|split_h|split_v|grid2x2|center|reset]`)
 72. [x] **完成任务**：实装视频音画分离与独立音频轨道派生 (`:detach_audio`/`:split_av`, DetachAudioCommand)
 73. [x] **完成任务**：实装轨道音量推子与立体声声相平衡控制 (`:track_vol`/`:pan`, Constant Power Panning)
+74. [x] **完成任务**：实装自动化关键帧属性包络线 (`:keyframe`/`:clearkf`, ClipKeyframeTrack & Visualizer)

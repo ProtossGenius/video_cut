@@ -204,6 +204,99 @@ impl AnimationSequence {
     }
 }
 
+/// 属性关键帧类型
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum KeyframeProperty {
+    Volume,   // 0.0 ~ 2.0 (标准 1.0)
+    Opacity,  // 0.0 ~ 1.0 (标准 1.0)
+    Scale,    // 0.1 ~ 5.0 (标准 1.0)
+    Rotation, // -360.0 ~ 360.0 (标准 0.0)
+}
+
+impl KeyframeProperty {
+    pub fn from_str_loose(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "vol" | "volume" | "音量" => Some(KeyframeProperty::Volume),
+            "op" | "opacity" | "alpha" | "透明度" => Some(KeyframeProperty::Opacity),
+            "scale" | "size" | "缩放" => Some(KeyframeProperty::Scale),
+            "rot" | "rotation" | "rotate" | "旋转" => Some(KeyframeProperty::Rotation),
+            _ => None,
+        }
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            KeyframeProperty::Volume => "音量 (Volume)",
+            KeyframeProperty::Opacity => "不透明度 (Opacity)",
+            KeyframeProperty::Scale => "缩放 (Scale)",
+            KeyframeProperty::Rotation => "旋转 (Rotation)",
+        }
+    }
+
+    pub fn default_val(&self) -> f32 {
+        match self {
+            KeyframeProperty::Volume => 1.0,
+            KeyframeProperty::Opacity => 1.0,
+            KeyframeProperty::Scale => 1.0,
+            KeyframeProperty::Rotation => 0.0,
+        }
+    }
+}
+
+/// 单个属性关键帧点
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct KeyframePoint {
+    pub offset_us: i64, // 相对于切片开始的微秒偏移
+    pub value: f32,     // 属性值
+}
+
+/// 切片自动化属性关键帧轨道
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ClipKeyframeTrack {
+    pub property: KeyframeProperty,
+    pub points: Vec<KeyframePoint>,
+}
+
+impl ClipKeyframeTrack {
+    pub fn new(property: KeyframeProperty) -> Self {
+        Self {
+            property,
+            points: Vec::new(),
+        }
+    }
+
+    pub fn add_or_update(&mut self, offset_us: i64, value: f32) {
+        if let Some(p) = self.points.iter_mut().find(|p| (p.offset_us - offset_us).abs() < 50_000) {
+            p.value = value;
+        } else {
+            self.points.push(KeyframePoint { offset_us, value });
+            self.points.sort_by_key(|p| p.offset_us);
+        }
+    }
+
+    pub fn evaluate_at(&self, offset_us: i64) -> f32 {
+        if self.points.is_empty() {
+            return self.property.default_val();
+        }
+        if self.points.len() == 1 || offset_us <= self.points[0].offset_us {
+            return self.points[0].value;
+        }
+        if offset_us >= self.points.last().map(|p| p.offset_us).unwrap_or(0) {
+            return self.points.last().map(|p| p.value).unwrap_or_else(|| self.property.default_val());
+        }
+        for window in self.points.windows(2) {
+            let p0 = &window[0];
+            let p1 = &window[1];
+            if offset_us >= p0.offset_us && offset_us <= p1.offset_us {
+                let span = (p1.offset_us - p0.offset_us).max(1) as f32;
+                let t = ((offset_us - p0.offset_us) as f32 / span).clamp(0.0, 1.0);
+                return p0.value + (p1.value - p0.value) * t;
+            }
+        }
+        self.property.default_val()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,5 +351,18 @@ mod tests {
         let eval = seq.evaluate_at(FrameTime(1_000_000), 1920.0, 1080.0);
         assert_eq!(eval.x, 50.0);
         assert_eq!(eval.y, 100.0);
+    }
+
+    #[test]
+    fn test_clip_keyframe_track_evaluation() {
+        let mut track = ClipKeyframeTrack::new(KeyframeProperty::Opacity);
+        assert_eq!(track.evaluate_at(500_000), 1.0); // 默认 1.0
+
+        track.add_or_update(0, 0.0); // 0s: 0.0
+        track.add_or_update(2_000_000, 1.0); // 2s: 1.0
+
+        assert_eq!(track.evaluate_at(0), 0.0);
+        assert_eq!(track.evaluate_at(2_000_000), 1.0);
+        assert!((track.evaluate_at(1_000_000) - 0.5).abs() < 0.01);
     }
 }

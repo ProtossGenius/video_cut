@@ -736,6 +736,41 @@ impl VideoCutApp {
                     }
                 }
             }
+            "keyframe" | "kf" => {
+                let prop_str = parts.get(1).copied().unwrap_or("vol");
+                let val_str = parts.get(2).copied().unwrap_or("1.0");
+                let val: f32 = val_str.parse().unwrap_or(1.0);
+                if let Some(prop) = crate::effects::KeyframeProperty::from_str_loose(prop_str) {
+                    let track_idx = self.main_ui_state.selected_track_idx;
+                    if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                        let playhead = FrameTime(self.main_ui_state.playhead_us);
+                        if let Some(clip) = track.clips.iter_mut().find(|c| {
+                            playhead >= c.timeline_start && playhead <= c.timeline_end()
+                        }) {
+                            let offset_us = (playhead - clip.timeline_start).0;
+                            let kf_track = clip.keyframe_track.get_or_insert_with(|| crate::effects::ClipKeyframeTrack::new(prop));
+                            kf_track.property = prop;
+                            kf_track.add_or_update(offset_us, val);
+                            self.main_ui_state.status_message = Some(format!(
+                                "已在切片 '{}' 偏移 {:.2}s 处添加 {} 关键帧: {:.2}",
+                                clip.name, offset_us as f64 / 1_000_000.0, prop.name(), val
+                            ));
+                        }
+                    }
+                }
+            }
+            "clearkf" | "clear_keyframes" | "clearkeyframes" => {
+                let track_idx = self.main_ui_state.selected_track_idx;
+                if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                    let playhead = FrameTime(self.main_ui_state.playhead_us);
+                    if let Some(clip) = track.clips.iter_mut().find(|c| {
+                        playhead >= c.timeline_start && playhead <= c.timeline_end()
+                    }) {
+                        clip.keyframe_track = None;
+                        self.main_ui_state.status_message = Some(format!("已清除切片 '{}' 上的所有自动化关键帧", clip.name));
+                    }
+                }
+            }
             "pip" | "picture_in_picture" => {
                 let preset_str = parts.get(1).copied().unwrap_or("corner_br");
                 if let Some(preset) = crate::effects::PipLayoutPreset::from_str_loose(preset_str) {
@@ -2495,5 +2530,32 @@ mod tests {
         assert!(left_gain > right_gain);
         assert!(left_gain > 0.0);
         assert!(right_gain > 0.0);
+    }
+
+    #[test]
+    fn test_keyframe_envelope_commands() {
+        let mut app = VideoCutApp::new_for_test();
+        let track = app.project_state.timeline.tracks.first_mut().unwrap();
+        track.clips.clear();
+        let clip = crate::timeline::Clip::new(crate::timeline::ClipId(1), "action.mp4".into(), crate::timeline::AssetId(1), FrameTime(0), FrameTime(10_000_000));
+        track.add_clip(clip);
+
+        // 1. 在 1s 处添加音量 0.0 关键帧
+        app.main_ui_state.playhead_us = 1_000_000;
+        app.execute_command_line(":keyframe vol 0.0");
+
+        // 2. 在 3s 处添加音量 1.5 关键帧
+        app.main_ui_state.playhead_us = 3_000_000;
+        app.execute_command_line(":kf vol 1.5");
+
+        let kf_track = app.project_state.timeline.tracks[0].clips[0].keyframe_track.as_ref().unwrap();
+        assert_eq!(kf_track.points.len(), 2);
+        assert_eq!(kf_track.evaluate_at(1_000_000), 0.0);
+        assert_eq!(kf_track.evaluate_at(3_000_000), 1.5);
+        assert!((kf_track.evaluate_at(2_000_000) - 0.75).abs() < 0.01);
+
+        // 3. 清除所有关键帧 :clearkf
+        app.execute_command_line(":clearkf");
+        assert!(app.project_state.timeline.tracks[0].clips[0].keyframe_track.is_none());
     }
 }

@@ -218,6 +218,7 @@ impl CutWorkflowEngine {
                                 transition_out: None,
                                 text_overlay: None,
                                 easing_curve: crate::effects::EasingCurve::default(),
+                                keyframe_track: None,
                             };
                             track.clips.retain(|c| !clip_ids.contains(&c.id.0));
                             track.add_clip(merged_clip);
