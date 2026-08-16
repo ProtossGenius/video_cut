@@ -360,6 +360,27 @@ impl VideoCutApp {
                     }
                 }
             }
+            "vol" | "volume" => {
+                if parts.len() > 1 {
+                    if let Ok(v) = parts[1].parse::<f32>() {
+                        self.main_ui_state.master_volume = v.clamp(0.0, 2.0);
+                        self.main_ui_state.status_message =
+                            Some(format!("主音量已设置为 {:.0}%", self.main_ui_state.master_volume * 100.0));
+                    }
+                } else {
+                    self.main_ui_state.status_message =
+                        Some(format!("当前主音量: {:.0}%", self.main_ui_state.master_volume * 100.0));
+                }
+            }
+            "mute" => {
+                self.main_ui_state.is_muted = true;
+                self.main_ui_state.status_message = Some("已静音".into());
+            }
+            "unmute" => {
+                self.main_ui_state.is_muted = false;
+                self.main_ui_state.status_message =
+                    Some(format!("已取消静音 (音量: {:.0}%)", self.main_ui_state.master_volume * 100.0));
+            }
             "export_lua" | "save_lua" => {
                 let filename = if parts.len() > 1 { parts[1] } else { "project.lua" };
                 let lua_code = crate::lua_engine::export_project_to_lua(&self.project_state);
@@ -512,7 +533,7 @@ fn setup_custom_fonts(ctx: &egui::Context) {
 
 impl eframe::App for VideoCutApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut Frame) {
-        // 如果处于播放状态，推进播放头并请求高刷重绘
+        // 如果处于播放状态，推进播放头并请求高刷重绘，同时驱动立体声 VU 电平计算
         if self.main_ui_state.is_playing {
             self.main_ui_state.playhead_us += 16_666;
             let total_dur = self.project_state.timeline.duration.0.max(30_000_000);
@@ -522,7 +543,22 @@ impl eframe::App for VideoCutApp {
             if self.main_ui_state.current_mode == Mode::Visual {
                 self.main_ui_state.visual_end_us = Some(self.main_ui_state.playhead_us);
             }
+
+            let time = self.main_ui_state.playhead_us as f32 / 1_000_000.0;
+            let sim_left = if self.main_ui_state.is_muted {
+                0.0
+            } else {
+                ((time * 4.5).sin().abs() * 0.75 * self.main_ui_state.master_volume).clamp(0.0, 1.0)
+            };
+            let sim_right = if self.main_ui_state.is_muted {
+                0.0
+            } else {
+                ((time * 5.2).cos().abs() * 0.80 * self.main_ui_state.master_volume).clamp(0.0, 1.0)
+            };
+            self.main_ui_state.vu_meter.update(sim_left, sim_right, 0.016);
             ui.ctx().request_repaint();
+        } else {
+            self.main_ui_state.vu_meter.update(0.0, 0.0, 0.016);
         }
 
         let wants_keyboard = ui.ctx().egui_wants_keyboard_input();
@@ -1570,5 +1606,24 @@ mod tests {
 
         assert!(app.main_ui_state.is_playing);
         assert!(app.main_ui_state.playhead_us > playhead_before);
+    }
+
+    #[test]
+    fn test_volume_and_mute_commands() {
+        let mut app = VideoCutApp::new_for_test();
+        assert_eq!(app.main_ui_state.master_volume, 1.0);
+        assert!(!app.main_ui_state.is_muted);
+
+        // 1. 测试设置音量 :vol 1.5
+        app.execute_command_line(":vol 1.5");
+        assert_eq!(app.main_ui_state.master_volume, 1.5);
+
+        // 2. 测试静音 :mute
+        app.execute_command_line(":mute");
+        assert!(app.main_ui_state.is_muted);
+
+        // 3. 测试取消静音 :unmute
+        app.execute_command_line(":unmute");
+        assert!(!app.main_ui_state.is_muted);
     }
 }

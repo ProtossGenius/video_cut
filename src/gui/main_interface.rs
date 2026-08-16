@@ -87,6 +87,27 @@ pub fn get_all_command_help_items() -> Vec<CommandHelpItem> {
             category: "切片特效",
         },
         CommandHelpItem {
+            name: ":vol",
+            alias: ":volume",
+            args: "<0.0~2.0>",
+            description: "设置主音频增益 (如 :vol 1.2 设置为 120% 音量)",
+            category: "音频控制",
+        },
+        CommandHelpItem {
+            name: ":mute",
+            alias: "",
+            args: "",
+            description: "静音主音频输出",
+            category: "音频控制",
+        },
+        CommandHelpItem {
+            name: ":unmute",
+            alias: "",
+            args: "",
+            description: "恢复主音频输出",
+            category: "音频控制",
+        },
+        CommandHelpItem {
             name: ":editor",
             alias: ":e",
             args: "[切片名]",
@@ -187,6 +208,9 @@ pub struct MainInterfaceUiState {
     pub history_search_active: bool,
     pub macro_recorder: crate::keybinding::MacroRecorder, // 键盘宏录制与回放器
     pub macro_pending_prefix: Option<char>, // 正在等待输入的宏寄存器前缀 ('q' 或 '@')
+    pub master_volume: f32, // 主音频增益 (0.0 ~ 2.0)
+    pub is_muted: bool,     // 是否静音
+    pub vu_meter: crate::media::audio_pipeline::VuMeterState, // 立体声 VU 电平表物理衰减计算状态
     pub command_input: String,
     pub is_command_mode: bool,
     pub media_search: String,
@@ -226,6 +250,9 @@ impl Default for MainInterfaceUiState {
             history_search_active: false,
             macro_recorder: crate::keybinding::MacroRecorder::default(),
             macro_pending_prefix: None,
+            master_volume: 1.0,
+            is_muted: false,
+            vu_meter: crate::media::audio_pipeline::VuMeterState::default(),
             command_input: String::new(),
             is_command_mode: false,
             media_search: String::new(),
@@ -674,20 +701,80 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                     state.playhead_us += 1_000_000;
                 }
 
-                ui.add_space(20.0);
-                // 模拟立体声电平表 (VU Meter)
-                ui.label(RichText::new("🔊 VU").size(11.0).color(Theme::TEXT_MUTED));
-                let meter_rect = ui.allocate_space(vec2(120.0, 14.0)).1;
-                let painter = ui.painter_at(meter_rect);
-                painter.rect_filled(meter_rect, CornerRadius::same(2), Theme::BG_INPUT);
+                ui.add_space(15.0);
+                // 主音量与静音切换
+                let mute_icon = if state.is_muted { "🔇" } else { "🔊" };
+                if ui.button(RichText::new(mute_icon).size(13.0)).clicked() {
+                    state.is_muted = !state.is_muted;
+                }
+                ui.label(
+                    RichText::new(format!("{:.0}%", state.master_volume * 100.0))
+                        .size(11.0)
+                        .color(if state.is_muted { Theme::TEXT_MUTED } else { Theme::ACCENT_CYAN }),
+                );
 
-                // 左右两声道指示条
-                let ch1_rect =
-                    Rect::from_min_size(meter_rect.min + vec2(2.0, 2.0), vec2(85.0, 4.0));
-                let ch2_rect =
-                    Rect::from_min_size(meter_rect.min + vec2(2.0, 8.0), vec2(78.0, 4.0));
-                painter.rect_filled(ch1_rect, CornerRadius::same(1), Theme::ACCENT_GREEN);
-                painter.rect_filled(ch2_rect, CornerRadius::same(1), Theme::ACCENT_GREEN);
+                ui.add_space(6.0);
+                // 高精度立体声 VU 电平表 (Dynamic Stereo VU Meter with Peak Decay)
+                let meter_w = 140.0;
+                let meter_h = 16.0;
+                let meter_rect = ui.allocate_space(vec2(meter_w, meter_h)).1;
+                let painter = ui.painter_at(meter_rect);
+                painter.rect_filled(meter_rect, CornerRadius::same(3), Theme::BG_INPUT);
+                painter.rect_stroke(
+                    meter_rect,
+                    CornerRadius::same(3),
+                    Stroke::new(1.0, Theme::BORDER_SUBTLE),
+                    egui::StrokeKind::Inside,
+                );
+
+                let l_rms_w = (state.vu_meter.left_rms * (meter_w - 6.0)).clamp(0.0, meter_w - 6.0);
+                let r_rms_w = (state.vu_meter.right_rms * (meter_w - 6.0)).clamp(0.0, meter_w - 6.0);
+                let l_peak_x = meter_rect.min.x + 3.0 + (state.vu_meter.left_peak * (meter_w - 6.0)).clamp(0.0, meter_w - 6.0);
+                let r_peak_x = meter_rect.min.x + 3.0 + (state.vu_meter.right_peak * (meter_w - 6.0)).clamp(0.0, meter_w - 6.0);
+
+                let ch_l_color = if state.vu_meter.left_rms > 0.85 {
+                    Color32::from_rgb(230, 70, 70)
+                } else if state.vu_meter.left_rms > 0.65 {
+                    Theme::ACCENT_ORANGE
+                } else {
+                    Theme::ACCENT_GREEN
+                };
+
+                let ch_r_color = if state.vu_meter.right_rms > 0.85 {
+                    Color32::from_rgb(230, 70, 70)
+                } else if state.vu_meter.right_rms > 0.65 {
+                    Theme::ACCENT_ORANGE
+                } else {
+                    Theme::ACCENT_GREEN
+                };
+
+                // L 声道条
+                let ch1_rect = Rect::from_min_size(meter_rect.min + vec2(3.0, 2.0), vec2(l_rms_w, 5.0));
+                painter.rect_filled(ch1_rect, CornerRadius::same(1), ch_l_color);
+                // L 峰值线
+                if state.vu_meter.left_peak > 0.05 {
+                    painter.line_segment(
+                        [pos2(l_peak_x, meter_rect.min.y + 2.0), pos2(l_peak_x, meter_rect.min.y + 7.0)],
+                        Stroke::new(1.5, Color32::WHITE),
+                    );
+                }
+
+                // R 声道条
+                let ch2_rect = Rect::from_min_size(meter_rect.min + vec2(3.0, 9.0), vec2(r_rms_w, 5.0));
+                painter.rect_filled(ch2_rect, CornerRadius::same(1), ch_r_color);
+                // R 峰值线
+                if state.vu_meter.right_peak > 0.05 {
+                    painter.line_segment(
+                        [pos2(r_peak_x, meter_rect.min.y + 9.0), pos2(r_peak_x, meter_rect.min.y + 14.0)],
+                        Stroke::new(1.5, Color32::WHITE),
+                    );
+                }
+
+                if state.vu_meter.is_clipping {
+                    // 红色削顶过载指示灯
+                    let clip_rect = Rect::from_min_size(meter_rect.max - vec2(6.0, 14.0), vec2(4.0, 12.0));
+                    painter.rect_filled(clip_rect, CornerRadius::same(1), Color32::from_rgb(255, 40, 40));
+                }
             });
         });
     });

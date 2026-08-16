@@ -63,6 +63,57 @@ impl AudioMixer {
         // 软截断防爆音
         [left_sum.clamp(-1.0, 1.0), right_sum.clamp(-1.0, 1.0)]
     }
+
+    /// 应用主音量增益与静音状态
+    pub fn apply_master_gain(samples: [f32; 2], gain: f32, is_muted: bool) -> [f32; 2] {
+        if is_muted {
+            [0.0, 0.0]
+        } else {
+            let clamped_gain = gain.clamp(0.0, 2.0);
+            [
+                (samples[0] * clamped_gain).clamp(-1.0, 1.0),
+                (samples[1] * clamped_gain).clamp(-1.0, 1.0),
+            ]
+        }
+    }
+}
+
+/// 立体声 VU 峰值电平表物理衰减计算状态
+#[derive(Debug, Clone, Default)]
+pub struct VuMeterState {
+    pub left_rms: f32,
+    pub right_rms: f32,
+    pub left_peak: f32,
+    pub right_peak: f32,
+    pub is_clipping: bool,
+}
+
+impl VuMeterState {
+    pub fn update(&mut self, target_left: f32, target_right: f32, dt_seconds: f32) {
+        let t_left = target_left.clamp(0.0, 1.0);
+        let t_right = target_right.clamp(0.0, 1.0);
+
+        // RMS 快速追踪
+        let attack = 15.0 * dt_seconds;
+        self.left_rms += (t_left - self.left_rms) * attack.min(1.0);
+        self.right_rms += (t_right - self.right_rms) * attack.min(1.0);
+
+        // 峰值衰减 (Ballistic Decay, ~20dB/sec)
+        let decay = (dt_seconds * 0.85).min(1.0);
+        if t_left >= self.left_peak {
+            self.left_peak = t_left;
+        } else {
+            self.left_peak = (self.left_peak - decay).max(0.0);
+        }
+
+        if t_right >= self.right_peak {
+            self.right_peak = t_right;
+        } else {
+            self.right_peak = (self.right_peak - decay).max(0.0);
+        }
+
+        self.is_clipping = self.left_peak >= 0.98 || self.right_peak >= 0.98;
+    }
 }
 
 #[cfg(test)]
@@ -95,5 +146,29 @@ mod tests {
         let mixed = AudioMixer::mix_stereo_samples(&[track1, track2]);
         // 0.8 + 0.5 = 1.3 -> clamp 到 1.0
         assert_eq!(mixed, [1.0, 1.0]);
+    }
+
+    #[test]
+    fn test_audio_master_gain_and_vu_meter() {
+        let samples = [0.5, 0.5];
+        // 增益 1.5 倍
+        let boosted = AudioMixer::apply_master_gain(samples, 1.5, false);
+        assert_eq!(boosted, [0.75, 0.75]);
+
+        // 静音
+        let muted = AudioMixer::apply_master_gain(samples, 1.5, true);
+        assert_eq!(muted, [0.0, 0.0]);
+
+        // VU 电平表物理衰减测试
+        let mut vu = VuMeterState::default();
+        vu.update(0.8, 0.9, 0.016);
+        assert!(vu.left_rms > 0.0);
+        assert_eq!(vu.left_peak, 0.8);
+        assert_eq!(vu.right_peak, 0.9);
+
+        // 下一帧目标为 0，Peak 平滑衰减
+        vu.update(0.0, 0.0, 0.016);
+        assert!(vu.left_peak < 0.8);
+        assert!(vu.left_peak > 0.7);
     }
 }
