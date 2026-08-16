@@ -11,14 +11,29 @@ pub enum ExportPreset {
     H264Mp4,
     HevcMp4,
     ProResMov,
+    GifAnimation,
+    AudioOnlyAac,
 }
 
 impl ExportPreset {
+    pub fn from_str_loose(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "h264" | "mp4" | "h.264" | "default" => Some(Self::H264Mp4),
+            "hevc" | "h265" | "h.265" | "4k" => Some(Self::HevcMp4),
+            "prores" | "mov" | "apple" => Some(Self::ProResMov),
+            "gif" | "animation" => Some(Self::GifAnimation),
+            "audio" | "aac" | "m4a" | "mp3" => Some(Self::AudioOnlyAac),
+            _ => None,
+        }
+    }
+
     pub fn display_name(&self) -> &'static str {
         match self {
             Self::H264Mp4 => "H.264 / MP4 (Web 兼容性推荐)",
             Self::HevcMp4 => "H.265 / HEVC (高压缩比，体积节省 40%)",
             Self::ProResMov => "Apple ProRes 422 / MOV (母带无损级)",
+            Self::GifAnimation => "GIF 动图 / 表情包 (社交轻量分享)",
+            Self::AudioOnlyAac => "AAC 纯音频 / M4A (播客与音轨提取)",
         }
     }
 
@@ -26,6 +41,8 @@ impl ExportPreset {
         match self {
             Self::H264Mp4 | Self::HevcMp4 => "mp4",
             Self::ProResMov => "mov",
+            Self::GifAnimation => "gif",
+            Self::AudioOnlyAac => "m4a",
         }
     }
 }
@@ -59,6 +76,60 @@ impl Default for ExportTaskState {
             is_completed: false,
             error_message: None,
         }
+    }
+}
+
+impl ExportTaskState {
+    pub fn update_progress(&mut self, current: u64, total: u64, render_fps: f32) {
+        self.current_frame = current;
+        self.total_frames = total.max(1);
+        self.progress = (current as f32 / self.total_frames as f32).clamp(0.0, 1.0);
+        self.fps = render_fps.max(1.0);
+        let remaining_frames = self.total_frames.saturating_sub(self.current_frame);
+        self.eta_seconds = (remaining_frames as f32 / self.fps).ceil() as u32;
+        if self.current_frame >= self.total_frames {
+            self.is_completed = true;
+            self.is_exporting = false;
+            self.progress = 1.0;
+            self.eta_seconds = 0;
+        }
+    }
+
+    pub fn eta_formatted(&self) -> String {
+        let mins = self.eta_seconds / 60;
+        let secs = self.eta_seconds % 60;
+        format!("{:02}:{:02}", mins, secs)
+    }
+}
+
+/// 批量多任务导出队列
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ExportQueue {
+    pub tasks: Vec<ExportTaskState>,
+    pub current_running_idx: Option<usize>,
+}
+
+impl ExportQueue {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn add_task(&mut self, output_path: impl Into<String>, preset: ExportPreset) -> usize {
+        let mut task = ExportTaskState::default();
+        task.output_path = output_path.into();
+        task.preset = preset;
+        self.tasks.push(task);
+        self.tasks.len() - 1
+    }
+
+    pub fn cancel_all(&mut self) {
+        for task in &mut self.tasks {
+            if task.is_exporting {
+                task.is_exporting = false;
+                task.error_message = Some("已取消".into());
+            }
+        }
+        self.current_running_idx = None;
     }
 }
 

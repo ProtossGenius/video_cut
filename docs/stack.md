@@ -93,3 +93,4 @@
 76. [x] **完成任务**：实装轨道色彩标签与切片多选编组管道 (`:group`/`:ungroup`/`:color`, ColorTagPreset)
 77. [x] **完成任务**：实装慢动作插帧混合预览与时间重映射 (`:blend`/`:interp`, FrameInterpolationMode)
 78. [x] **完成任务**：实装键盘宏序列化持久化与状态栏录制指示器 (`:macros`/`:save_macros`/`:load_macros`, MacroRecorder)
+79. [x] **完成任务**：实装视频导出进度预估与多格式转码队列 (`:export`/`:export_queue`, ExportQueue & ETA)

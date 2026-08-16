@@ -481,6 +481,7 @@ pub struct MainInterfaceUiState {
     pub history_search_active: bool,
     pub show_export_modal: bool, // :export 弹出的视频渲染导出弹窗
     pub export_state: crate::rendering::smart_export::ExportTaskState, // 导出任务实时进度状态
+    pub export_queue: crate::rendering::smart_export::ExportQueue, // 多格式批量导出任务队列
     pub macro_recorder: crate::keybinding::MacroRecorder, // 键盘宏录制与回放器
     pub macro_pending_prefix: Option<char>, // 正在等待输入的宏寄存器前缀 ('q' 或 '@')
     pub master_volume: f32, // 主音频增益 (0.0 ~ 2.0)
@@ -529,6 +530,7 @@ impl Default for MainInterfaceUiState {
             history_search_active: false,
             show_export_modal: false,
             export_state: crate::rendering::smart_export::ExportTaskState::default(),
+            export_queue: crate::rendering::smart_export::ExportQueue::default(),
             macro_recorder: crate::keybinding::MacroRecorder::default(),
             macro_pending_prefix: None,
             master_volume: 1.0,
@@ -3828,11 +3830,13 @@ fn draw_export_modal(ui: &mut Ui, project: &ProjectState, state: &mut MainInterf
             ui.add_space(10.0);
             // 编码预设选择
             ui.label(RichText::new("⚙ 编码预设 (Preset):").strong().color(Theme::TEXT_PRIMARY));
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 let presets = [
                     (crate::rendering::smart_export::ExportPreset::H264Mp4, "H.264 (Web兼容)"),
-                    (crate::rendering::smart_export::ExportPreset::HevcMp4, "H.265 (HEVC高压缩)"),
+                    (crate::rendering::smart_export::ExportPreset::HevcMp4, "H.265 (HEVC 4K)"),
                     (crate::rendering::smart_export::ExportPreset::ProResMov, "ProRes 422 (母带级)"),
+                    (crate::rendering::smart_export::ExportPreset::GifAnimation, "GIF 动图"),
+                    (crate::rendering::smart_export::ExportPreset::AudioOnlyAac, "AAC 纯音频"),
                 ];
 
                 for (p, label) in presets {
@@ -3858,12 +3862,12 @@ fn draw_export_modal(ui: &mut Ui, project: &ProjectState, state: &mut MainInterf
             if state.export_state.is_exporting {
                 ui.label(
                     RichText::new(format!(
-                        "⚡ 正在渲染导出... {:.1}% (帧数: {}/{}, 速率: {:.0} fps, ETA: {}s)",
+                        "⚡ 正在渲染导出... {:.1}% (帧数: {}/{}, 速率: {:.0} fps, 剩余预估: {})",
                         state.export_state.progress * 100.0,
                         state.export_state.current_frame,
                         state.export_state.total_frames,
                         state.export_state.fps,
-                        state.export_state.eta_seconds
+                        state.export_state.eta_formatted()
                     ))
                     .color(Theme::ACCENT_ORANGE)
                     .strong(),
@@ -3884,9 +3888,10 @@ fn draw_export_modal(ui: &mut Ui, project: &ProjectState, state: &mut MainInterf
                 let dur = project.timeline.duration;
                 ui.label(
                     RichText::new(format!(
-                        "总时长: {} | 预计帧数: {} 帧 @ 60fps | 智能分片预渲染秒级拼接已就绪",
+                        "总时长: {} | 预计帧数: {} 帧 @ 60fps | 转码队列任务数: {} 个",
                         format_timecode(dur.0),
-                        (dur.0 as f64 / 1_000_000.0 * 60.0) as u64
+                        (dur.0 as f64 / 1_000_000.0 * 60.0) as u64,
+                        state.export_queue.tasks.len()
                     ))
                     .size(11.5)
                     .color(Theme::TEXT_MUTED),
@@ -3906,6 +3911,10 @@ fn draw_export_modal(ui: &mut Ui, project: &ProjectState, state: &mut MainInterf
                         .clicked()
                     {
                         do_start_export = true;
+                    }
+                    if ui.button(RichText::new(" ➕ 加入转码队列 ").size(12.0)).clicked() {
+                        let idx = state.export_queue.add_task(state.export_state.output_path.clone(), state.export_state.preset);
+                        state.status_message = Some(format!("已将任务 #{} ({}) 添加至导出队列", idx + 1, state.export_state.output_path));
                     }
                 } else if ui.button(RichText::new(" ⏹ 取消导出 ").size(12.0).color(Theme::TEXT_MUTED)).clicked() {
                     state.export_state.is_exporting = false;

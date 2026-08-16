@@ -1025,15 +1025,23 @@ impl VideoCutApp {
                 if parts.len() > 1 {
                     self.main_ui_state.export_state.output_path = parts[1].to_string();
                     if parts.len() > 2 {
-                        match parts[2].to_lowercase().as_str() {
-                            "hevc" | "h265" => self.main_ui_state.export_state.preset = crate::rendering::smart_export::ExportPreset::HevcMp4,
-                            "prores" | "mov" => self.main_ui_state.export_state.preset = crate::rendering::smart_export::ExportPreset::ProResMov,
-                            _ => self.main_ui_state.export_state.preset = crate::rendering::smart_export::ExportPreset::H264Mp4,
+                        if let Some(p) = crate::rendering::smart_export::ExportPreset::from_str_loose(parts[2]) {
+                            self.main_ui_state.export_state.preset = p;
                         }
                     }
                 }
                 self.main_ui_state.show_export_modal = true;
                 self.main_ui_state.status_message = Some("已开启视频渲染导出面板 (:export)".into());
+            }
+            "export_queue" | "exports" => {
+                let count = self.main_ui_state.export_queue.tasks.len();
+                self.main_ui_state.show_export_modal = true;
+                self.main_ui_state.status_message = Some(format!("当前导出转码队列包含 {} 个任务", count));
+            }
+            "cancel_export" | "cancelexport" => {
+                self.main_ui_state.export_state.is_exporting = false;
+                self.main_ui_state.export_queue.cancel_all();
+                self.main_ui_state.status_message = Some("已取消所有正在运行与排队的导出任务".into());
             }
             "export_lua" | "save_lua" => {
                 let filename = if parts.len() > 1 { parts[1] } else { "project.lua" };
@@ -2793,5 +2801,31 @@ mod tests {
         assert!(app.main_ui_state.macro_recorder.registers.contains_key(&'z'));
 
         let _ = std::fs::remove_file(temp_path);
+    }
+
+    #[test]
+    fn test_export_queue_and_eta() {
+        let mut app = VideoCutApp::new_for_test();
+
+        // 1. 设置导出目标为 GIF :export output.gif gif
+        app.execute_command_line(":export output.gif gif");
+        assert!(app.main_ui_state.show_export_modal);
+        assert_eq!(app.main_ui_state.export_state.preset, crate::rendering::smart_export::ExportPreset::GifAnimation);
+
+        // 2. 更新进度与 ETA 计算
+        app.main_ui_state.export_state.update_progress(500, 1000, 50.0);
+        assert_eq!(app.main_ui_state.export_state.progress, 0.5);
+        assert_eq!(app.main_ui_state.export_state.eta_seconds, 10);
+        assert_eq!(app.main_ui_state.export_state.eta_formatted(), "00:10");
+
+        // 3. 多任务队列 :export_queue
+        app.main_ui_state.export_queue.add_task("clip_1080p.mp4", crate::rendering::smart_export::ExportPreset::H264Mp4);
+        app.main_ui_state.export_queue.add_task("clip_audio.m4a", crate::rendering::smart_export::ExportPreset::AudioOnlyAac);
+        app.execute_command_line(":export_queue");
+        assert!(app.main_ui_state.status_message.as_ref().unwrap().contains("包含 2 个任务"));
+
+        // 4. 取消队列 :cancel_export
+        app.execute_command_line(":cancel_export");
+        assert!(app.main_ui_state.status_message.as_ref().unwrap().contains("已取消"));
     }
 }
