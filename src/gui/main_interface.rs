@@ -241,6 +241,20 @@ pub fn get_all_command_help_items() -> Vec<CommandHelpItem> {
             category: "音频控制",
         },
         CommandHelpItem {
+            name: ":track_vol",
+            alias: ":tvol",
+            args: "<0.0~2.0>",
+            description: "设置当前选中国道的独立音量增益 (如 :track_vol 1.2)",
+            category: "音频控制",
+        },
+        CommandHelpItem {
+            name: ":pan",
+            alias: ":track_pan",
+            args: "<-1.0~1.0>",
+            description: "设置当前轨道的立体声左右声相平衡 (-1.0 全左, 0.0 居中, 1.0 全右)",
+            category: "音频控制",
+        },
+        CommandHelpItem {
             name: ":fadein",
             alias: ":fade_in",
             args: "<秒数/时间>",
@@ -1355,6 +1369,65 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                                 ui.close();
                             }
                             ui.separator();
+                            ui.menu_button("🎚 轨道音量增益", |ui| {
+                                if ui.button("150% (+3.5dB)").clicked() {
+                                    state.command_input = ":track_vol 1.5".into();
+                                    state.is_command_mode = true;
+                                    ui.close();
+                                }
+                                if ui.button("120% (+1.6dB)").clicked() {
+                                    state.command_input = ":track_vol 1.2".into();
+                                    state.is_command_mode = true;
+                                    ui.close();
+                                }
+                                if ui.button("100% (0dB 标准)").clicked() {
+                                    state.command_input = ":track_vol 1.0".into();
+                                    state.is_command_mode = true;
+                                    ui.close();
+                                }
+                                if ui.button("80% (-1.9dB)").clicked() {
+                                    state.command_input = ":track_vol 0.8".into();
+                                    state.is_command_mode = true;
+                                    ui.close();
+                                }
+                                if ui.button("50% (-6.0dB)").clicked() {
+                                    state.command_input = ":track_vol 0.5".into();
+                                    state.is_command_mode = true;
+                                    ui.close();
+                                }
+                                if ui.button("静音 (0%)").clicked() {
+                                    state.command_input = ":track_vol 0.0".into();
+                                    state.is_command_mode = true;
+                                    ui.close();
+                                }
+                            });
+                            ui.menu_button("🎧 立体声声相平衡", |ui| {
+                                if ui.button("全左 (L100)").clicked() {
+                                    state.command_input = ":pan -1.0".into();
+                                    state.is_command_mode = true;
+                                    ui.close();
+                                }
+                                if ui.button("偏左 (L50)").clicked() {
+                                    state.command_input = ":pan -0.5".into();
+                                    state.is_command_mode = true;
+                                    ui.close();
+                                }
+                                if ui.button("居中 (Center)").clicked() {
+                                    state.command_input = ":pan 0.0".into();
+                                    state.is_command_mode = true;
+                                    ui.close();
+                                }
+                                if ui.button("偏右 (R50)").clicked() {
+                                    state.command_input = ":pan 0.5".into();
+                                    state.is_command_mode = true;
+                                    ui.close();
+                                }
+                                if ui.button("全右 (R100)").clicked() {
+                                    state.command_input = ":pan 1.0".into();
+                                    state.is_command_mode = true;
+                                    ui.close();
+                                }
+                            });
                             if ui.button(RichText::new("❌ 删除此轨道").color(Color32::from_rgb(240, 80, 80))).clicked() {
                                 ui.close();
                             }
@@ -1378,12 +1451,19 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                             },
                         );
 
-                        // 轨道操作小图标 (Mute, Lock)
+                        // 轨道操作与音量声相数值
+                        let pan_label = if track.pan < -0.05 {
+                            format!("L{:.0}", -track.pan * 100.0)
+                        } else if track.pan > 0.05 {
+                            format!("R{:.0}", track.pan * 100.0)
+                        } else {
+                            "C".to_string()
+                        };
                         painter.text(
                             pos2(header_rect.min.x + 8.0, header_rect.min.y + 32.0),
                             egui::Align2::LEFT_TOP,
-                            "👁 🔒 M S",
-                            egui::FontId::proportional(10.0),
+                            format!("🎚{:.0}% | Pan:{}", track.volume * 100.0, pan_label),
+                            egui::FontId::monospace(10.0),
                             Theme::TEXT_MUTED,
                         );
 

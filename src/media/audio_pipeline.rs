@@ -76,6 +76,20 @@ impl AudioMixer {
             ]
         }
     }
+
+    /// 对单轨立体声采样应用该轨道的音量增益与常数能量等功率声相法则
+    pub fn apply_track_pan_and_volume(sample: [f32; 2], volume: f32, pan: f32, is_muted: bool) -> [f32; 2] {
+        if is_muted {
+            return [0.0, 0.0];
+        }
+        let theta = (pan.clamp(-1.0, 1.0) + 1.0) * (std::f32::consts::PI / 4.0);
+        let left_gain = theta.cos() * volume.clamp(0.0, 2.0);
+        let right_gain = theta.sin() * volume.clamp(0.0, 2.0);
+        [
+            (sample[0] * left_gain).clamp(-1.0, 1.0),
+            (sample[1] * right_gain).clamp(-1.0, 1.0),
+        ]
+    }
 }
 
 /// 立体声 VU 峰值电平表物理衰减计算状态
@@ -170,5 +184,29 @@ mod tests {
         vu.update(0.0, 0.0, 0.016);
         assert!(vu.left_peak < 0.8);
         assert!(vu.left_peak > 0.7);
+    }
+
+    #[test]
+    fn test_track_pan_and_volume_math() {
+        let sample = [1.0, 1.0];
+
+        // 1. 居中 (Pan = 0.0), 等功率各为 0.7071
+        let center = AudioMixer::apply_track_pan_and_volume(sample, 1.0, 0.0, false);
+        assert!((center[0] - 0.7071).abs() < 0.01);
+        assert!((center[1] - 0.7071).abs() < 0.01);
+
+        // 2. 全左 (Pan = -1.0)
+        let left_only = AudioMixer::apply_track_pan_and_volume(sample, 1.0, -1.0, false);
+        assert!((left_only[0] - 1.0).abs() < 0.01);
+        assert!(left_only[1].abs() < 0.01);
+
+        // 3. 全右 (Pan = 1.0)
+        let right_only = AudioMixer::apply_track_pan_and_volume(sample, 1.0, 1.0, false);
+        assert!(right_only[0].abs() < 0.01);
+        assert!((right_only[1] - 1.0).abs() < 0.01);
+
+        // 4. 静音
+        let muted = AudioMixer::apply_track_pan_and_volume(sample, 1.0, 0.0, true);
+        assert_eq!(muted, [0.0, 0.0]);
     }
 }

@@ -16,9 +16,11 @@
 - **音量增益调节**：支持 `:vol <0.0~2.0>` (如 `:vol 1.2` 提升至 120%)、`:mute` 静音与 `:unmute` 取消静音。
 - **立体声 VU 电平表**：在界面实时展示左右声道 RMS 与 Peak 峰值电平，具备平滑物理衰减动画与 >0dB 红色削顶警示。
 
-## 切片音频淡入淡出包络 (Audio Fade Envelopes)
-- **参数控制**：切片支持 `audio_fade_in_us` 与 `audio_fade_out_us`，支持 `:fadein <time>` (如 `:fadein 0.5s`) 与 `:fadeout <time>` (如 `:fadeout 1.2s`) 命令行及右键菜单调节。
-- **时间线可视化**：在音频切片波形图上方绘制平滑的对数/余弦淡入淡出几何包络蒙版与白色控制手柄。
-- **混音实时计算**：`AudioMixer` 在混合采样时动态计算相对切片起止点的包络乘数 ($0.0 \sim 1.0$)，彻底避免切片首尾爆音（Click/Pop）。
+## 轨道独立音量推子与声相控制 (Track Volume Fader & Stereo Pan Pot)
+- **轨道音量增益 (Track Volume)**：各轨道支持独立的音量推子，范围 `0.0 ~ 2.0` (对应 `-∞ dB ~ +6 dB`)，支持 `:track_vol <vol>` 或 `:tvol <vol>` 快速设定当前轨道音量。
+- **立体声声相平衡 (Stereo Pan Pot)**：各轨道支持左右声道声相平衡，范围 `-1.0 ~ +1.0`（`-1.0` 为全左 L100，`0.0` 为居中 Center，`+1.0` 为全右 R100），支持 `:pan <-1.0~1.0>` 设定。
+- **轨道混音器计算 (Track Panning Math)**：采用等功率常数能量声相定律（Constant Power Panning Law: $L = \cos(\frac{\pi}{4}(1 + pan)), R = \sin(\frac{\pi}{4}(1 + pan))$），保证声相从左移至右时总听觉响度恒定不变。
+- **轨道表头 UI 集成**：在左侧轨道表头中直观展示各轨道的音量增益百分比与声相旋钮滑块。
+
 
 

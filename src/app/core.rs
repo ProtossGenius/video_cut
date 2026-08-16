@@ -788,6 +788,43 @@ impl VideoCutApp {
                     }
                 }
             }
+            "track_vol" | "trackvol" | "tvol" => {
+                let track_idx = self.main_ui_state.selected_track_idx;
+                if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                    if parts.len() > 1 {
+                        if let Ok(v) = parts[1].parse::<f32>() {
+                            track.volume = v.clamp(0.0, 2.0);
+                            self.main_ui_state.status_message =
+                                Some(format!("轨道 '{}' 音量已设置为 {:.0}%", track.name, track.volume * 100.0));
+                        }
+                    } else {
+                        self.main_ui_state.status_message =
+                            Some(format!("当前轨道 '{}' 音量: {:.0}%", track.name, track.volume * 100.0));
+                    }
+                }
+            }
+            "pan" | "track_pan" | "trackpan" => {
+                let track_idx = self.main_ui_state.selected_track_idx;
+                if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                    if parts.len() > 1 {
+                        if let Ok(p) = parts[1].parse::<f32>() {
+                            track.pan = p.clamp(-1.0, 1.0);
+                            let pan_desc = if track.pan < -0.05 {
+                                format!("L{:.0}", -track.pan * 100.0)
+                            } else if track.pan > 0.05 {
+                                format!("R{:.0}", track.pan * 100.0)
+                            } else {
+                                "Center (居中)".to_string()
+                            };
+                            self.main_ui_state.status_message =
+                                Some(format!("轨道 '{}' 立体声声相已设置为: {}", track.name, pan_desc));
+                        }
+                    } else {
+                        self.main_ui_state.status_message =
+                            Some(format!("当前轨道 '{}' 声相: {:+.2}", track.name, track.pan));
+                    }
+                }
+            }
             "vol" | "volume" => {
                 if parts.len() > 1 {
                     if let Ok(v) = parts[1].parse::<f32>() {
@@ -2438,5 +2475,25 @@ mod tests {
         // 撤销 :u
         app.execute_command_line(":u");
         assert_eq!(app.project_state.timeline.tracks.len(), 1);
+    }
+
+    #[test]
+    fn test_track_volume_and_pan_commands() {
+        let mut app = VideoCutApp::new_for_test();
+        app.main_ui_state.selected_track_idx = 0;
+
+        // 1. 设置轨道音量 :track_vol 1.2
+        app.execute_command_line(":track_vol 1.2");
+        assert_eq!(app.project_state.timeline.tracks[0].volume, 1.2);
+
+        // 2. 设置轨道声相 :pan -0.5
+        app.execute_command_line(":pan -0.5");
+        assert_eq!(app.project_state.timeline.tracks[0].pan, -0.5);
+
+        // 3. 计算常数能量声相增益
+        let (left_gain, right_gain) = app.project_state.timeline.tracks[0].stereo_pan_gains();
+        assert!(left_gain > right_gain);
+        assert!(left_gain > 0.0);
+        assert!(right_gain > 0.0);
     }
 }
