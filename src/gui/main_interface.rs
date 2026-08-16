@@ -961,12 +961,32 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                                     .color(Theme::ACCENT_CYAN),
                             );
                             ui.separator();
-                            if ui.button("🏷 重命名轨道 (:name)").clicked() {
+                            if ui.button("✏ 重命名轨道 (:name)").clicked() {
                                 state.command_input = format!(":name {}", track.name);
                                 state.is_command_mode = true;
                                 ui.close();
                             }
-                            if ui.button("➕ 在下方插入新轨道 (Shift+Enter)").clicked() {
+                            let pin_label = if track.is_pinned { "📌 取消固定置顶" } else { "📌 固定置顶轨道 (P)" };
+                            if ui.button(pin_label).clicked() {
+                                state.command_input = if track.is_pinned { ":unpin".into() } else { ":pin".into() };
+                                state.is_command_mode = true;
+                                ui.close();
+                            }
+                            if ui.button("⬆ 向上移动轨道 (Shift+K)").clicked() {
+                                ui.close();
+                            }
+                            if ui.button("⬇ 向下移动轨道 (Shift+J)").clicked() {
+                                ui.close();
+                            }
+                            ui.separator();
+                            if ui.button("➕ 在下方插入新轨道 (O)").clicked() {
+                                ui.close();
+                            }
+                            if ui.button("➕ 在上方插入新轨道 (Shift+O)").clicked() {
+                                ui.close();
+                            }
+                            ui.separator();
+                            if ui.button(RichText::new("❌ 删除此轨道").color(Color32::from_rgb(240, 80, 80))).clicked() {
                                 ui.close();
                             }
                         });
@@ -1101,6 +1121,12 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                                 if ui.button("📝 编辑 Lua 特效脚本 (e)").clicked() {
                                     state.command_input = format!(":editor {}", clip.name);
                                     state.is_command_mode = true;
+                                    ui.close();
+                                }
+                                ui.separator();
+                                if ui.button("🎬 导出此切片 (:export)").clicked() {
+                                    state.export_state.output_path = format!("{}_export.mp4", clip.name);
+                                    state.show_export_modal = true;
                                     ui.close();
                                 }
                             });
