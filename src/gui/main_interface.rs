@@ -213,6 +213,13 @@ pub fn get_all_command_help_items() -> Vec<CommandHelpItem> {
             category: "字幕文本",
         },
         CommandHelpItem {
+            name: ":snap",
+            alias: ":snapping",
+            args: "[on|off]",
+            description: "开启、关闭或切换磁性时间线吸附与智能标尺辅助线",
+            category: "时间导航",
+        },
+        CommandHelpItem {
             name: ":fadein",
             alias: ":fade_in",
             args: "<秒数/时间>",
@@ -374,6 +381,8 @@ pub struct MainInterfaceUiState {
     pub show_message_window: bool,
     pub command_history_list: Vec<String>,
     pub status_message: Option<String>,
+    pub snapping_enabled: bool, // 磁性吸附开关 (默认开启)
+    pub active_snap_guide: Option<crate::timeline::SnapResult>, // 当前吸附对齐标尺线与说明
 }
 
 impl Default for MainInterfaceUiState {
@@ -418,6 +427,8 @@ impl Default for MainInterfaceUiState {
             show_message_window: false,
             command_history_list: Vec::new(),
             status_message: None,
+            snapping_enabled: true,
+            active_snap_guide: None,
         }
     }
 }
@@ -1169,13 +1180,40 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                     let track_count = project.timeline.tracks.len() + 1; // +1 为垃圾回收轨道
                     let virtual_width = 2500.0; // 虚拟时间线宽度
 
-                    let (scroll_rect, _resp) = ui.allocate_exact_size(
+                    let (scroll_rect, timeline_resp) = ui.allocate_exact_size(
                         vec2(
                             virtual_width + track_header_width,
                             track_height * (track_count as f32) + 26.0,
                         ),
                         egui::Sense::click_and_drag(),
                     );
+
+                    if timeline_resp.dragged() || timeline_resp.clicked() {
+                        if let Some(mouse_pos) = timeline_resp.interact_pointer_pos() {
+                            let ruler_start_x = scroll_rect.min.x + track_header_width;
+                            if mouse_pos.x >= ruler_start_x {
+                                let time_secs = (mouse_pos.x - ruler_start_x) / state.zoom_level;
+                                let raw_time_us = (time_secs.max(0.0) * 1_000_000.0) as i64;
+                                let raw_ft = crate::timeline::FrameTime(raw_time_us);
+
+                                if state.snapping_enabled {
+                                    let snap_engine = crate::timeline::SnapEngine::default();
+                                    if let Some(snap) = snap_engine.find_snap_point(raw_ft, &project.timeline, &project.timeline.global_anchors, state.zoom_level) {
+                                        state.playhead_us = snap.snapped_time.0;
+                                        state.active_snap_guide = Some(snap);
+                                    } else {
+                                        state.playhead_us = raw_time_us;
+                                        state.active_snap_guide = None;
+                                    }
+                                } else {
+                                    state.playhead_us = raw_time_us;
+                                    state.active_snap_guide = None;
+                                }
+                            }
+                        }
+                    } else if !timeline_resp.dragged() {
+                        state.active_snap_guide = None;
+                    }
 
                     let painter = ui.painter_at(scroll_rect);
 
@@ -1793,6 +1831,26 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                         vec2(14.0, 12.0),
                     );
                     painter.rect_filled(handle_rect, CornerRadius::same(3), Theme::ACCENT_CYAN);
+
+                    // 3.7 绘制磁性吸附对齐标尺辅助线 (Magnetic Smart Guide Line)
+                    if let Some(ref snap) = state.active_snap_guide {
+                        let snap_x = ruler_rect.min.x + ((snap.snapped_time.0 as f32 / 1_000_000.0) * state.zoom_level);
+                        painter.line_segment(
+                            [pos2(snap_x, scroll_rect.min.y), pos2(snap_x, scroll_rect.max.y)],
+                            Stroke::new(1.5, Theme::ACCENT_ORANGE),
+                        );
+                        let guide_text = format!("🧲 对齐: {}", snap.snap_point.description);
+                        let badge_rect = Rect::from_min_size(pos2(snap_x + 6.0, ruler_rect.min.y + 2.0), vec2(170.0, 18.0));
+                        painter.rect_filled(badge_rect, CornerRadius::same(3), Color32::from_rgb(40, 25, 0));
+                        painter.rect_stroke(badge_rect, CornerRadius::same(3), Stroke::new(1.0, Theme::ACCENT_ORANGE), egui::StrokeKind::Inside);
+                        painter.text(
+                            badge_rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            guide_text,
+                            egui::FontId::proportional(10.0),
+                            Theme::ACCENT_ORANGE,
+                        );
+                    }
                 });
         });
     });
@@ -1883,6 +1941,12 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(14.0);
                 ui.label(RichText::new("UTF-8 | 60 FPS | Audio Master Clock").size(11.0).color(Theme::TEXT_MUTED));
+                ui.add_space(8.0);
+                let snap_text = if state.snapping_enabled { "🧲 SNAP: ON" } else { "🧲 SNAP: OFF" };
+                let snap_color = if state.snapping_enabled { Theme::ACCENT_ORANGE } else { Theme::TEXT_MUTED };
+                if ui.button(RichText::new(snap_text).size(11.0).color(snap_color).strong()).clicked() {
+                    state.snapping_enabled = !state.snapping_enabled;
+                }
             });
         });
     });

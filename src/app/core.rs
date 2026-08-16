@@ -669,6 +669,21 @@ impl VideoCutApp {
                     }
                 }
             }
+            "snap" | "snapping" => {
+                if parts.len() > 1 {
+                    let on = !matches!(parts[1].to_lowercase().as_str(), "off" | "false" | "0" | "disable");
+                    self.main_ui_state.snapping_enabled = on;
+                } else {
+                    self.main_ui_state.snapping_enabled = !self.main_ui_state.snapping_enabled;
+                }
+                let status = if self.main_ui_state.snapping_enabled { "开启" } else { "关闭" };
+                self.main_ui_state.status_message = Some(format!("磁性时间线吸附已{}", status));
+            }
+            "toggle_snap" | "togglesnap" => {
+                self.main_ui_state.snapping_enabled = !self.main_ui_state.snapping_enabled;
+                let status = if self.main_ui_state.snapping_enabled { "开启" } else { "关闭" };
+                self.main_ui_state.status_message = Some(format!("磁性时间线吸附已{}", status));
+            }
             "vol" | "volume" => {
                 if parts.len() > 1 {
                     if let Ok(v) = parts[1].parse::<f32>() {
@@ -2210,5 +2225,26 @@ mod tests {
         // 5. 清除文本 :clear_text
         app.execute_command_line(":clear_text");
         assert!(app.project_state.timeline.tracks[0].clips[0].text_overlay.is_none());
+    }
+
+    #[test]
+    fn test_snapping_commands() {
+        let mut app = VideoCutApp::new_for_test();
+        assert!(app.main_ui_state.snapping_enabled);
+
+        // 1. 关闭磁性吸附 :snap off
+        app.execute_command_line(":snap off");
+        assert!(!app.main_ui_state.snapping_enabled);
+
+        // 2. 开启磁性吸附 :snap on
+        app.execute_command_line(":snap on");
+        assert!(app.main_ui_state.snapping_enabled);
+
+        // 3. 切换磁性吸附 :snap / :toggle_snap
+        app.execute_command_line(":snap");
+        assert!(!app.main_ui_state.snapping_enabled);
+
+        app.execute_command_line(":toggle_snap");
+        assert!(app.main_ui_state.snapping_enabled);
     }
 }
