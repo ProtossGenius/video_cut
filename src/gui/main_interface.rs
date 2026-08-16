@@ -290,6 +290,34 @@ pub fn get_all_command_help_items() -> Vec<CommandHelpItem> {
             category: "特效控制",
         },
         CommandHelpItem {
+            name: ":macros",
+            alias: ":list_macros",
+            args: "",
+            description: "查看当前已录制的键盘宏寄存器列表与按键数",
+            category: "高级功能",
+        },
+        CommandHelpItem {
+            name: ":save_macros",
+            alias: ":savemacros",
+            args: "[path]",
+            description: "将已录制的键盘宏持久化保存为 JSON 文件",
+            category: "高级功能",
+        },
+        CommandHelpItem {
+            name: ":load_macros",
+            alias: ":loadmacros",
+            args: "[path]",
+            description: "从 JSON 文件中载入键盘宏集合",
+            category: "高级功能",
+        },
+        CommandHelpItem {
+            name: ":export_macro",
+            alias: ":exportmacro",
+            args: "<register> [path]",
+            description: "将指定寄存器的键盘宏导出为可执行的 Lua 脚本",
+            category: "高级功能",
+        },
+        CommandHelpItem {
             name: ":detach_audio",
             alias: ":split_av",
             args: "",
@@ -2284,9 +2312,9 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
             ui.add_space(10.0);
             if let Some(reg) = state.macro_recorder.current_register() {
                 ui.label(
-                    RichText::new(format!("● RECORDING @{}", reg))
+                    RichText::new(format!("🔴 REC [{}]", reg))
                         .size(12.5)
-                        .color(Theme::ACCENT_ORANGE)
+                        .color(Color32::from_rgb(255, 60, 60))
                         .strong(),
                 );
                 ui.add_space(8.0);

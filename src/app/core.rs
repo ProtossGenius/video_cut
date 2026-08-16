@@ -893,6 +893,41 @@ impl VideoCutApp {
                     }
                 }
             }
+            "macros" | "list_macros" | "macro" => {
+                let count = self.main_ui_state.macro_recorder.registers.len();
+                let keys: Vec<String> = self.main_ui_state.macro_recorder.registers.iter()
+                    .map(|(k, v)| format!("'{}' ({} actions)", k, v.len()))
+                    .collect();
+                self.main_ui_state.status_message = Some(format!("已录制 {} 个键盘宏: [{}]", count, keys.join(", ")));
+            }
+            "save_macros" | "savemacros" => {
+                let path = parts.get(1).copied().unwrap_or(".macros.json");
+                match self.main_ui_state.macro_recorder.save_to_json(path) {
+                    Ok(_) => self.main_ui_state.status_message = Some(format!("键盘宏已成功保存至: {}", path)),
+                    Err(e) => self.main_ui_state.status_message = Some(format!("保存键盘宏失败: {}", e)),
+                }
+            }
+            "load_macros" | "loadmacros" => {
+                let path = parts.get(1).copied().unwrap_or(".macros.json");
+                match crate::keybinding::MacroRecorder::load_from_json(path) {
+                    Ok(recorder) => {
+                        let count = recorder.registers.len();
+                        self.main_ui_state.macro_recorder = recorder;
+                        self.main_ui_state.status_message = Some(format!("成功从 {} 载入 {} 个键盘宏", path, count));
+                    }
+                    Err(e) => self.main_ui_state.status_message = Some(format!("载入键盘宏失败: {}", e)),
+                }
+            }
+            "export_macro" | "exportmacro" => {
+                let reg = parts.get(1).and_then(|s| s.chars().next()).unwrap_or('a');
+                if let Some(lua_code) = self.main_ui_state.macro_recorder.export_to_lua(reg) {
+                    let out_file = format!("macro_{}.lua", reg);
+                    let _ = std::fs::write(&out_file, &lua_code);
+                    self.main_ui_state.status_message = Some(format!("已将宏 @{} 导出为 Lua 自动化脚本: {}", reg, out_file));
+                } else {
+                    self.main_ui_state.status_message = Some(format!("寄存器 @{} 未录制任何宏", reg));
+                }
+            }
             "detach_audio" | "detachaudio" | "split_av" | "splitav" => {
                 let track_idx = self.main_ui_state.selected_track_idx;
                 let track_id_opt = self.project_state.timeline.tracks.get(track_idx).map(|t| t.id);
@@ -2730,5 +2765,33 @@ mod tests {
         // 3. 设置为临近截断 :blend nearest
         app.execute_command_line(":blend nearest");
         assert_eq!(app.project_state.timeline.tracks[0].clips[0].interp_mode, crate::effects::FrameInterpolationMode::Nearest);
+    }
+
+    #[test]
+    fn test_macro_commands_and_persistence() {
+        let mut app = VideoCutApp::new_for_test();
+        app.main_ui_state.macro_recorder.start_recording('z');
+        app.main_ui_state.macro_recorder.record_action(crate::keybinding::Action::Split);
+        app.main_ui_state.macro_recorder.record_action(crate::keybinding::Action::RippleDelete);
+        app.main_ui_state.macro_recorder.stop_recording();
+
+        // 1. 查看宏列表 :macros
+        app.execute_command_line(":macros");
+        assert!(app.main_ui_state.status_message.as_ref().unwrap().contains("已录制 1 个键盘宏"));
+
+        // 2. 保存宏至临时 JSON 文件 :save_macros
+        let temp_path = std::env::temp_dir().join("app_test_macros.json");
+        app.execute_command_line(&format!(":save_macros {}", temp_path.display()));
+        assert!(app.main_ui_state.status_message.as_ref().unwrap().contains("键盘宏已成功保存至"));
+
+        // 3. 清空宏并载入 :load_macros
+        app.main_ui_state.macro_recorder = crate::keybinding::MacroRecorder::default();
+        assert_eq!(app.main_ui_state.macro_recorder.registers.len(), 0);
+
+        app.execute_command_line(&format!(":load_macros {}", temp_path.display()));
+        assert_eq!(app.main_ui_state.macro_recorder.registers.len(), 1);
+        assert!(app.main_ui_state.macro_recorder.registers.contains_key(&'z'));
+
+        let _ = std::fs::remove_file(temp_path);
     }
 }

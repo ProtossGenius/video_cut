@@ -1,5 +1,7 @@
+use serde::{Deserialize, Serialize};
+
 /// 定义按键被解析后转化为的具体行为
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Action {
     // ==== 播放控制 ====
     PlayPause,

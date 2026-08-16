@@ -1,8 +1,10 @@
 use std::collections::HashMap;
+use std::path::Path;
+use serde::{Deserialize, Serialize};
 use crate::keybinding::action::Action;
 
 /// Vim 风格键盘宏录制与回放器
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MacroRecorder {
     pub recording_register: Option<char>,
     pub current_macro: Vec<Action>,
@@ -64,6 +66,43 @@ impl MacroRecorder {
             None
         }
     }
+
+    /// 保存所有已录制的宏至 JSON 文件
+    pub fn save_to_json(&self, path: impl AsRef<Path>) -> Result<(), std::io::Error> {
+        let json_str = serde_json::to_string_pretty(self)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
+        std::fs::write(path, json_str)
+    }
+
+    /// 从 JSON 文件读取载入宏数据
+    pub fn load_from_json(path: impl AsRef<Path>) -> Result<Self, std::io::Error> {
+        let content = std::fs::read_to_string(path)?;
+        let recorder: Self = serde_json::from_str(&content)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
+        Ok(recorder)
+    }
+
+    /// 导出指定寄存器的宏为可执行的 Lua 自动化脚本
+    pub fn export_to_lua(&self, reg: char) -> Option<String> {
+        let clean_reg = reg.to_ascii_lowercase();
+        let actions = self.registers.get(&clean_reg)?;
+        let mut script = format!("-- Macro '{}' exported from VideoCut\nfunction replay_macro_{}()\n", clean_reg, clean_reg);
+        for action in actions {
+            match action {
+                Action::PlayPause => script.push_str("    app:play_pause()\n"),
+                Action::Split => script.push_str("    app:split()\n"),
+                Action::MoveLeft => script.push_str("    app:move_left()\n"),
+                Action::MoveRight => script.push_str("    app:move_right()\n"),
+                Action::Delete => script.push_str("    app:delete()\n"),
+                Action::RippleDelete => script.push_str("    app:ripple_delete()\n"),
+                Action::CloseGaps => script.push_str("    app:close_gaps()\n"),
+                Action::LuaCommand(cmd) => script.push_str(&format!("    app:run_command({:?})\n", cmd)),
+                _ => script.push_str(&format!("    -- {:?}\n", action)),
+            }
+        }
+        script.push_str("end\n");
+        Some(script)
+    }
 }
 
 #[cfg(test)]
@@ -100,5 +139,29 @@ mod tests {
         // 5. 回放 @@ (重复上一次宏)
         let last_replayed = recorder.get_last_macro().unwrap();
         assert_eq!(last_replayed, replayed);
+    }
+
+    #[test]
+    fn test_macro_persistence_and_lua_export() {
+        let mut recorder = MacroRecorder::default();
+        recorder.start_recording('m');
+        recorder.record_action(Action::Split);
+        recorder.record_action(Action::RippleDelete);
+        recorder.stop_recording();
+
+        // 1. 导出为 Lua 脚本
+        let lua_code = recorder.export_to_lua('m').unwrap();
+        assert!(lua_code.contains("function replay_macro_m()"));
+        assert!(lua_code.contains("app:split()"));
+        assert!(lua_code.contains("app:ripple_delete()"));
+
+        // 2. 保存至 JSON 文件并载入验证
+        let temp_path = std::env::temp_dir().join("test_macros_persistence.json");
+        recorder.save_to_json(&temp_path).unwrap();
+
+        let loaded = MacroRecorder::load_from_json(&temp_path).unwrap();
+        assert_eq!(loaded.registers.get(&'m'), recorder.registers.get(&'m'));
+
+        let _ = std::fs::remove_file(temp_path);
     }
 }

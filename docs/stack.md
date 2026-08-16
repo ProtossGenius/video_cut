@@ -92,3 +92,4 @@
 75. [x] **完成任务**：实装音频波形节奏与能量瞬态吸附引擎 (`:beatsnap`, AudioTransientDetector & SnapTargetKind)
 76. [x] **完成任务**：实装轨道色彩标签与切片多选编组管道 (`:group`/`:ungroup`/`:color`, ColorTagPreset)
 77. [x] **完成任务**：实装慢动作插帧混合预览与时间重映射 (`:blend`/`:interp`, FrameInterpolationMode)
+78. [x] **完成任务**：实装键盘宏序列化持久化与状态栏录制指示器 (`:macros`/`:save_macros`/`:load_macros`, MacroRecorder)
