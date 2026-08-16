@@ -2,6 +2,7 @@ use crate::editor::autocomplete::{Autocomplete, CompletionItem};
 use crate::editor::syntax::LuaSyntaxHighlighter;
 use crate::gui::theme::Theme;
 use crate::lua_engine::LuaRuntime;
+use crate::project::ProjectState;
 use eframe::egui::{
     self, pos2, vec2, Color32, CornerRadius, Rect, RichText, Stroke, Ui, UiBuilder,
 };
@@ -115,9 +116,24 @@ fn get_line_up_to_cursor(text: &str, cursor_index: usize) -> Option<String> {
     Some(last_line.to_string())
 }
 
-pub fn show(ui: &mut Ui, state: &mut EditorState) {
+pub fn show(ui: &mut Ui, project: &ProjectState, state: &mut EditorState) {
     let full_rect = ui.max_rect();
     ui.painter().rect_filled(full_rect, 0.0, Theme::BG_APP);
+
+    let follow_targets: Vec<(String, String)> = project
+        .timeline
+        .tracks
+        .iter()
+        .flat_map(|track| {
+            track.clips.iter().map(move |clip| {
+                (
+                    format!("{}.{}", track.name, clip.name),
+                    format!("轨道 {} / 切片 {}", track.name, clip.name),
+                )
+            })
+        })
+        .collect();
+    state.autocomplete.set_follow_targets(follow_targets);
 
     let status_height = 32.0;
     let main_height = full_rect.height() - status_height;
@@ -286,16 +302,12 @@ pub fn show(ui: &mut Ui, state: &mut EditorState) {
                 if let Some(cursor_range) = output.cursor_range {
                     let cursor_idx: usize = cursor_range.primary.index.into();
                     if let Some(line) = get_line_up_to_cursor(&state.text, cursor_idx) {
-                        let prefix: String = line
-                            .chars()
-                            .rev()
-                            .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == ':')
-                            .collect();
-                        let prefix_len = prefix.len();
+                        let prefix = Autocomplete::extract_prefix(&line);
 
                         if let Some(completion) = state.completions.get(state.selected_completion) {
-                            let insert_text = &completion.label[prefix_len..];
-                            state.text.insert_str(cursor_idx, insert_text);
+                            if let Some(insert_text) = completion.label.strip_prefix(&prefix) {
+                                state.text.insert_str(cursor_idx, insert_text);
+                            }
                         }
                     }
                 }

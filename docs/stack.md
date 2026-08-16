@@ -98,3 +98,6 @@
 81. [x] **完成任务**：实装虚拟代理剪辑流与低分辨率下采样缓存生成器 (`:proxy`/`:gen_proxy`, ProxyManager)
 82. [x] **完成任务**：实装音频多段参数均衡器与 EBU R128 响度标准化预设 (`:eq`/`:loudnorm`, TrackAudioProcessor)
 83. [x] **完成任务**：实装快捷键冲突检测与自定义键位映射字典导入导出 (`:keymap`/`:import_keymap`/`:export_keymap`, KeymapProfileManager)
+84. [x] **完成任务**：补完监视器与轨道空白区右键上下文菜单 (`:pin`/`:track_up`/`:new_track_above`/`:delete_track`/`:monitor_zoom`, Main Interface Context Menus)
+85. [x] **完成任务**：实装 Follow 目标路径动态自动补全 (`'track.clip'`, Editor Autocomplete & Follow Targets)
+86. [x] **完成任务**：编写端到端用户使用指南并整理文档入口 (`docs/00-user-guide/README.md`)

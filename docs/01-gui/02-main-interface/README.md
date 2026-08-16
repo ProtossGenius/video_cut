@@ -42,4 +42,13 @@ graph TD
    - ⬇ 向下移动 (`Shift+J`) / ⬆ 向上移动 (`Shift+K`)
    - ➕ 在下方新建轨道 (`O`) / ➕ 在上方新建轨道 (`Shift+O`)
    - ❌ 删除轨道
-
+3. **轨道空白区右键菜单**：
+   - 📂 导入媒体到当前轨道 (`:import_media`)
+   - ✏ 重命名当前轨道 (`:name`)
+   - ➕ 在上方/下方插入新轨道 (`:new_track_above` / `:new_track_below`)
+   - 📌 置顶 / 取消置顶 (`:pin` / `:unpin`)
+   - 🗑 删除当前轨道 (`:delete_track`)
+4. **监视器右键菜单**：
+   - 🔎 视口缩放 `50% / 100% / 150% / 200% / Fit` (`:monitor_zoom`)
+   - ⚡ 切换代理媒体预览 (`:proxy toggle`)
+   - 📂 打开媒体导入浏览器 (`:import_media`)

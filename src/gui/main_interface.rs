@@ -80,6 +80,62 @@ pub fn get_all_command_help_items() -> Vec<CommandHelpItem> {
             category: "轨道管理",
         },
         CommandHelpItem {
+            name: ":pin",
+            alias: ":pin_track",
+            args: "",
+            description: "将当前轨道置顶固定到时间线顶部",
+            category: "轨道管理",
+        },
+        CommandHelpItem {
+            name: ":unpin",
+            alias: ":unpin_track",
+            args: "",
+            description: "取消当前轨道的置顶固定状态",
+            category: "轨道管理",
+        },
+        CommandHelpItem {
+            name: ":track_up",
+            alias: ":move_track_up",
+            args: "",
+            description: "将当前轨道上移一层",
+            category: "轨道管理",
+        },
+        CommandHelpItem {
+            name: ":track_down",
+            alias: ":move_track_down",
+            args: "",
+            description: "将当前轨道下移一层",
+            category: "轨道管理",
+        },
+        CommandHelpItem {
+            name: ":new_track_above",
+            alias: ":insert_track_above",
+            args: "",
+            description: "在当前轨道上方插入一条新轨道",
+            category: "轨道管理",
+        },
+        CommandHelpItem {
+            name: ":new_track_below",
+            alias: ":insert_track_below",
+            args: "",
+            description: "在当前轨道下方插入一条新轨道",
+            category: "轨道管理",
+        },
+        CommandHelpItem {
+            name: ":delete_track",
+            alias: ":deltrack",
+            args: "",
+            description: "删除当前轨道（至少保留一条主轨道）",
+            category: "轨道管理",
+        },
+        CommandHelpItem {
+            name: ":import_media",
+            alias: ":import",
+            args: "",
+            description: "打开媒体导入浏览器并导入到当前轨道",
+            category: "轨道管理",
+        },
+        CommandHelpItem {
             name: ":lock",
             alias: "",
             args: "",
@@ -423,6 +479,13 @@ pub fn get_all_command_help_items() -> Vec<CommandHelpItem> {
             category: "音频控制",
         },
         CommandHelpItem {
+            name: ":monitor_zoom",
+            alias: ":viewzoom",
+            args: "[fit|50|100|150|200]",
+            description: "切换监视器视口缩放倍率（不改变切片本身变换）",
+            category: "工程渲染",
+        },
+        CommandHelpItem {
             name: ":editor",
             alias: ":e",
             args: "[切片名]",
@@ -584,6 +647,7 @@ pub struct MainInterfaceUiState {
     pub show_easing_modal: bool, // :easing / :curve 弹出的贝塞尔缓动曲线可视化编辑器
     pub proxy_manager: crate::media::ProxyManager, // 虚拟低清代理媒体管理器
     pub keymap_manager: crate::keybinding::KeymapProfileManager, // 键位映射预设与冲突检测管理器
+    pub monitor_zoom: f32, // 监视器视口缩放倍率（仅影响预览视口）
 }
 
 impl Default for MainInterfaceUiState {
@@ -635,6 +699,7 @@ impl Default for MainInterfaceUiState {
             active_snap_guide: None,
             show_easing_modal: false,
             keymap_manager: crate::keybinding::KeymapProfileManager::default(),
+            monitor_zoom: 1.0,
         }
     }
 }
@@ -930,6 +995,11 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
             ui.add_space(10.0);
             let monitor_rect = ui.allocate_space(vec2(monitor_w, monitor_h)).1;
             let painter = ui.painter_at(monitor_rect);
+            let monitor_resp = ui.interact(
+                monitor_rect,
+                ui.id().with("monitor_ctx"),
+                egui::Sense::click(),
+            );
 
             // 监视器黑色画框与阴影
             painter.rect_filled(
@@ -946,6 +1016,9 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
 
             // 动态多轨道合成器图层查询 (VideoCompositor Layer Query)
             let video_inner = monitor_rect.shrink(2.0);
+            let view_zoom = state.monitor_zoom.clamp(0.5, 2.0);
+            let view_size = video_inner.size() * view_zoom;
+            let display_rect = Rect::from_center_size(video_inner.center(), view_size);
             let playhead = FrameTime(state.playhead_us);
             let mut active_layers = Vec::new();
             let mut active_audio_count = 0;
@@ -979,15 +1052,21 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                 Color32::from_rgb(25, 45, 65)
             };
             painter.rect_filled(video_inner, CornerRadius::same(6), bg_color);
+            painter.rect_stroke(
+                display_rect,
+                CornerRadius::same(6),
+                Stroke::new(1.0, Color32::from_rgba_unmultiplied(180, 220, 255, 170)),
+                egui::StrokeKind::Inside,
+            );
 
             // 画十字安全线 (Safe Area)
-            let center = video_inner.center();
+            let center = display_rect.center();
             painter.line_segment(
-                [center - vec2(12.0, 0.0), center + vec2(12.0, 0.0)],
+                [center - vec2(12.0 * view_zoom, 0.0), center + vec2(12.0 * view_zoom, 0.0)],
                 Stroke::new(1.0, Color32::from_white_alpha(100)),
             );
             painter.line_segment(
-                [center - vec2(0.0, 12.0), center + vec2(0.0, 12.0)],
+                [center - vec2(0.0, 12.0 * view_zoom), center + vec2(0.0, 12.0 * view_zoom)],
                 Stroke::new(1.0, Color32::from_white_alpha(100)),
             );
 
@@ -1002,7 +1081,7 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                 );
             } else {
                 for (idx, layer) in sorted_layers.iter().enumerate() {
-                    let badge_pos = video_inner.min + vec2(14.0, 14.0 + (idx as f32 * 18.0));
+                    let badge_pos = display_rect.min + vec2(14.0, 14.0 + (idx as f32 * 18.0));
                     painter.text(
                         badge_pos,
                         egui::Align2::LEFT_TOP,
@@ -1045,6 +1124,14 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                 }
             }
 
+            painter.text(
+                video_inner.min + vec2(10.0, video_inner.height() - 10.0),
+                egui::Align2::LEFT_BOTTOM,
+                format!("VIEW {:.0}%", view_zoom * 100.0),
+                egui::FontId::monospace(9.5),
+                Theme::TEXT_MUTED,
+            );
+
             // 音频立体声电平指示 (Audio Master VU)
             if active_audio_count > 0 {
                 let vu_rect = Rect::from_min_size(video_inner.max - vec2(80.0, 36.0), vec2(66.0, 8.0));
@@ -1064,7 +1151,7 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
             let selected_track_idx = state.selected_track_idx;
             if let Some(sel_track) = project.timeline.tracks.get(selected_track_idx) {
                 if let Some(sel_clip) = sel_track.clips.iter().find(|c| playhead >= c.timeline_start && playhead <= c.timeline_end()) {
-                    let gizmo_rect = video_inner.shrink(18.0);
+                    let gizmo_rect = display_rect.shrink(18.0 * view_zoom.min(1.5));
                     // 绘制变换半透明边框
                     painter.rect_stroke(
                         gizmo_rect,
@@ -1227,6 +1314,40 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                     }
                 }
             }
+
+            monitor_resp.context_menu(|ui| {
+                ui.label(
+                    RichText::new("🖥 监视器视口")
+                        .strong()
+                        .color(Theme::ACCENT_CYAN),
+                );
+                ui.separator();
+                ui.menu_button("🔎 视口缩放", |ui| {
+                    for (label, cmd) in [
+                        ("Fit / 适应窗口", ":monitor_zoom fit"),
+                        ("50%", ":monitor_zoom 50"),
+                        ("100%", ":monitor_zoom 100"),
+                        ("150%", ":monitor_zoom 150"),
+                        ("200%", ":monitor_zoom 200"),
+                    ] {
+                        if ui.button(label).clicked() {
+                            state.command_input = cmd.into();
+                            state.is_command_mode = true;
+                            ui.close();
+                        }
+                    }
+                });
+                if ui.button("⚡ 切换代理媒体预览 (:proxy toggle)").clicked() {
+                    state.command_input = ":proxy toggle".into();
+                    state.is_command_mode = true;
+                    ui.close();
+                }
+                if ui.button("📂 导入媒体到当前轨道 (:import_media)").clicked() {
+                    state.command_input = ":import_media".into();
+                    state.is_command_mode = true;
+                    ui.close();
+                }
+            });
 
             // 画面右下角渲染分辨率
             painter.text(
@@ -1570,16 +1691,24 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                                 ui.close();
                             }
                             if ui.button("⬆ 向上移动轨道 (Shift+K)").clicked() {
+                                state.command_input = ":track_up".into();
+                                state.is_command_mode = true;
                                 ui.close();
                             }
                             if ui.button("⬇ 向下移动轨道 (Shift+J)").clicked() {
+                                state.command_input = ":track_down".into();
+                                state.is_command_mode = true;
                                 ui.close();
                             }
                             ui.separator();
                             if ui.button("➕ 在下方插入新轨道 (O)").clicked() {
+                                state.command_input = ":new_track_below".into();
+                                state.is_command_mode = true;
                                 ui.close();
                             }
                             if ui.button("➕ 在上方插入新轨道 (Shift+O)").clicked() {
+                                state.command_input = ":new_track_above".into();
+                                state.is_command_mode = true;
                                 ui.close();
                             }
                             ui.separator();
@@ -1687,6 +1816,8 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                                 }
                             });
                             if ui.button(RichText::new("❌ 删除此轨道").color(Color32::from_rgb(240, 80, 80))).clicked() {
+                                state.command_input = ":delete_track".into();
+                                state.is_command_mode = true;
                                 ui.close();
                             }
                         });
@@ -1769,6 +1900,71 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                             ],
                             Stroke::new(1.0, Theme::BORDER_SUBTLE),
                         );
+
+                        let content_resp = ui.interact(
+                            content_rect,
+                            ui.id().with(("track_blank_ctx", track.id.0)),
+                            egui::Sense::click(),
+                        );
+                        if content_resp.clicked() {
+                            state.selected_track_idx = i;
+                        }
+                        content_resp.context_menu(|ui| {
+                            ui.label(
+                                RichText::new(format!("🧱 轨道空白区: {}", track.name))
+                                    .strong()
+                                    .color(Theme::ACCENT_CYAN),
+                            );
+                            ui.separator();
+                            if ui.button("📂 导入媒体到当前轨道 (:import_media)").clicked() {
+                                state.command_input = ":import_media".into();
+                                state.is_command_mode = true;
+                                ui.close();
+                            }
+                            if ui.button("✏ 重命名轨道 (:name)").clicked() {
+                                state.command_input = format!(":name {}", track.name);
+                                state.is_command_mode = true;
+                                ui.close();
+                            }
+                            ui.separator();
+                            if ui.button("➕ 在上方插入新轨道").clicked() {
+                                state.command_input = ":new_track_above".into();
+                                state.is_command_mode = true;
+                                ui.close();
+                            }
+                            if ui.button("➕ 在下方插入新轨道").clicked() {
+                                state.command_input = ":new_track_below".into();
+                                state.is_command_mode = true;
+                                ui.close();
+                            }
+                            ui.separator();
+                            if ui.button("⬆ 当前轨道上移").clicked() {
+                                state.command_input = ":track_up".into();
+                                state.is_command_mode = true;
+                                ui.close();
+                            }
+                            if ui.button("⬇ 当前轨道下移").clicked() {
+                                state.command_input = ":track_down".into();
+                                state.is_command_mode = true;
+                                ui.close();
+                            }
+                            let pin_label = if track.is_pinned {
+                                "📌 取消置顶"
+                            } else {
+                                "📌 置顶当前轨道"
+                            };
+                            if ui.button(pin_label).clicked() {
+                                state.command_input =
+                                    if track.is_pinned { ":unpin".into() } else { ":pin".into() };
+                                state.is_command_mode = true;
+                                ui.close();
+                            }
+                            if ui.button("🗑 删除当前轨道").clicked() {
+                                state.command_input = ":delete_track".into();
+                                state.is_command_mode = true;
+                                ui.close();
+                            }
+                        });
 
                         // 绘制剪辑块并附加鼠标右键上下文菜单
                         for clip in &track.clips {
@@ -3590,6 +3786,7 @@ fn draw_command_help_modal(ui: &mut Ui, state: &mut MainInterfaceUiState) {
                             }
                         }
                     }
+
                 });
         });
     });

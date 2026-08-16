@@ -5,7 +5,8 @@ pub struct CompletionItem {
 }
 
 pub struct Autocomplete {
-    keywords: Vec<CompletionItem>,
+    static_keywords: Vec<CompletionItem>,
+    dynamic_keywords: Vec<CompletionItem>,
 }
 
 impl Default for Autocomplete {
@@ -16,7 +17,7 @@ impl Default for Autocomplete {
 
 impl Autocomplete {
     pub fn new() -> Self {
-        let mut keywords = vec![
+        let mut static_keywords = vec![
             // animation DSL globals
             CompletionItem {
                 label: "begin_animation".into(),
@@ -113,31 +114,102 @@ impl Autocomplete {
             },
         ];
 
-        keywords.sort_by(|a, b| a.label.cmp(&b.label));
+        static_keywords.sort_by(|a, b| a.label.cmp(&b.label));
 
-        Self { keywords }
+        Self {
+            static_keywords,
+            dynamic_keywords: Vec::new(),
+        }
+    }
+
+    pub fn set_follow_targets(&mut self, targets: Vec<(String, String)>) {
+        let mut dynamic_keywords = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+
+        for (identifier, detail) in targets {
+            for label in [
+                identifier.clone(),
+                format!("'{}'", identifier),
+                format!("\"{}\"", identifier),
+            ] {
+                if seen.insert(label.clone()) {
+                    dynamic_keywords.push(CompletionItem {
+                        label,
+                        detail: format!("follow target -- {}", detail),
+                    });
+                }
+            }
+        }
+
+        dynamic_keywords.sort_by(|a, b| a.label.cmp(&b.label));
+        self.dynamic_keywords = dynamic_keywords;
+    }
+
+    pub fn extract_prefix(line_up_to_cursor: &str) -> String {
+        if let Some(quoted_prefix) = extract_unclosed_quote_prefix(line_up_to_cursor) {
+            return quoted_prefix;
+        }
+
+        line_up_to_cursor
+            .chars()
+            .rev()
+            .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == ':' || *c == '.')
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect()
     }
 
     /// 根据光标之前的这一行文本，提取出当前的输入单词，并返回匹配的补全列表
     pub fn complete(&self, line_up_to_cursor: &str) -> Vec<CompletionItem> {
-        // 向前查找合法的单词字符（字母、数字、下划线、冒号）
-        let prefix: String = line_up_to_cursor
-            .chars()
-            .rev()
-            .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == ':')
-            .collect();
-        let prefix: String = prefix.chars().rev().collect();
-
+        let prefix = Self::extract_prefix(line_up_to_cursor);
         if prefix.is_empty() {
             return vec![];
         }
 
-        self.keywords
+        let mut matches: Vec<CompletionItem> = self
+            .static_keywords
             .iter()
+            .chain(self.dynamic_keywords.iter())
             .filter(|item| item.label.starts_with(&prefix))
             .cloned()
-            .collect()
+            .collect();
+        matches.sort_by(|a, b| a.label.cmp(&b.label));
+        matches
     }
+}
+
+fn extract_unclosed_quote_prefix(line_up_to_cursor: &str) -> Option<String> {
+    let mut in_single = None;
+    let mut in_double = None;
+    let mut prev = '\0';
+
+    for (idx, ch) in line_up_to_cursor.char_indices() {
+        match ch {
+            '\'' if prev != '\\' && in_double.is_none() => {
+                if in_single.is_some() {
+                    in_single = None;
+                } else {
+                    in_single = Some(idx);
+                }
+            }
+            '"' if prev != '\\' && in_single.is_none() => {
+                if in_double.is_some() {
+                    in_double = None;
+                } else {
+                    in_double = Some(idx);
+                }
+            }
+            _ => {}
+        }
+        prev = ch;
+    }
+
+    if let Some(start) = in_single.or(in_double) {
+        return Some(line_up_to_cursor[start..].to_string());
+    }
+
+    None
 }
 
 #[cfg(test)]
@@ -195,5 +267,36 @@ mod tests {
         let res_follow = ac.complete("fol");
         assert_eq!(res_follow.len(), 1);
         assert_eq!(res_follow[0].label, "follow");
+    }
+
+    #[test]
+    fn test_extract_prefix_supports_quoted_follow_targets() {
+        assert_eq!(Autocomplete::extract_prefix("follow('V1.In"), "'V1.In");
+        assert_eq!(
+            Autocomplete::extract_prefix("follow(\"Track 1.Intro"),
+            "\"Track 1.Intro"
+        );
+        assert_eq!(Autocomplete::extract_prefix("main:bind_k"), "main:bind_k");
+    }
+
+    #[test]
+    fn test_dynamic_follow_target_completion() {
+        let mut ac = Autocomplete::new();
+        ac.set_follow_targets(vec![
+            ("V1.Intro".into(), "轨道 V1 / 切片 Intro".into()),
+            ("Track 1.video1.mp4".into(), "轨道 Track 1 / 切片 video1.mp4".into()),
+        ]);
+
+        let path_res = ac.complete("'V1.In");
+        assert_eq!(path_res.len(), 1);
+        assert_eq!(path_res[0].label, "'V1.Intro'");
+
+        let spaced_res = ac.complete("\"Track 1.vid");
+        assert_eq!(spaced_res.len(), 1);
+        assert_eq!(spaced_res[0].label, "\"Track 1.video1.mp4\"");
+
+        let bare_res = ac.complete("V1.In");
+        assert_eq!(bare_res.len(), 1);
+        assert_eq!(bare_res[0].label, "V1.Intro");
     }
 }

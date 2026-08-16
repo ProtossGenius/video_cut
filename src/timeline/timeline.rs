@@ -49,6 +49,16 @@ impl Timeline {
         self.is_dirty = true;
     }
 
+    /// 在指定轨道上方新增一条轨道
+    pub fn insert_track_above(&mut self, before_id: TrackId, new_track: Track) {
+        if let Some(pos) = self.tracks.iter().position(|t| t.id == before_id) {
+            self.tracks.insert(pos, new_track);
+        } else {
+            self.tracks.insert(0, new_track);
+        }
+        self.is_dirty = true;
+    }
+
     pub fn track_mut(&mut self, id: TrackId) -> Option<&mut Track> {
         self.tracks.iter_mut().find(|t| t.id == id)
     }
@@ -209,6 +219,19 @@ mod tests {
         timeline.insert_track_below(TrackId(1), Track::new(TrackId(3), "V2"));
         assert_eq!(timeline.tracks.len(), 3);
         assert_eq!(timeline.tracks[1].id, TrackId(3));
+    }
+
+    #[test]
+    fn test_insert_track_above() {
+        let mut timeline = Timeline::new();
+        timeline.add_track(Track::new(TrackId(1), "V1"));
+        timeline.add_track(Track::new(TrackId(2), "A1"));
+
+        timeline.insert_track_above(TrackId(2), Track::new(TrackId(3), "V2"));
+        assert_eq!(timeline.tracks.len(), 3);
+        assert_eq!(timeline.tracks[0].id, TrackId(1));
+        assert_eq!(timeline.tracks[1].id, TrackId(3));
+        assert_eq!(timeline.tracks[2].id, TrackId(2));
     }
 
     #[test]

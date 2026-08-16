@@ -206,6 +206,173 @@ impl VideoCutApp {
                     }
                 }
             }
+            "pin" | "pin_track" => {
+                let track_idx = self.main_ui_state.selected_track_idx;
+                if let Some((track_id, track_name)) = self
+                    .project_state
+                    .timeline
+                    .tracks
+                    .get(track_idx)
+                    .map(|track| (track.id, track.name.clone()))
+                {
+                    if self.project_state.timeline.pin_track(track_id) {
+                        if let Some(new_idx) = self
+                            .project_state
+                            .timeline
+                            .tracks
+                            .iter()
+                            .position(|track| track.id == track_id)
+                        {
+                            self.main_ui_state.selected_track_idx = new_idx;
+                        }
+                        self.main_ui_state.status_message =
+                            Some(format!("轨道 '{}' 已置顶", track_name));
+                    }
+                }
+            }
+            "unpin" | "unpin_track" => {
+                let track_idx = self.main_ui_state.selected_track_idx;
+                if let Some((track_id, track_name)) = self
+                    .project_state
+                    .timeline
+                    .tracks
+                    .get(track_idx)
+                    .map(|track| (track.id, track.name.clone()))
+                {
+                    if self.project_state.timeline.unpin_track(track_id) {
+                        self.main_ui_state.status_message =
+                            Some(format!("轨道 '{}' 已取消置顶", track_name));
+                    }
+                }
+            }
+            "track_up" | "move_track_up" | "trackup" => {
+                let track_idx = self.main_ui_state.selected_track_idx;
+                if let Some((track_id, track_name)) = self
+                    .project_state
+                    .timeline
+                    .tracks
+                    .get(track_idx)
+                    .map(|track| (track.id, track.name.clone()))
+                {
+                    if self.project_state.timeline.move_track_up(track_id) {
+                        if let Some(new_idx) = self
+                            .project_state
+                            .timeline
+                            .tracks
+                            .iter()
+                            .position(|track| track.id == track_id)
+                        {
+                            self.main_ui_state.selected_track_idx = new_idx;
+                        }
+                        self.main_ui_state.status_message =
+                            Some(format!("轨道 '{}' 已上移", track_name));
+                    }
+                }
+            }
+            "track_down" | "move_track_down" | "trackdown" => {
+                let track_idx = self.main_ui_state.selected_track_idx;
+                if let Some((track_id, track_name)) = self
+                    .project_state
+                    .timeline
+                    .tracks
+                    .get(track_idx)
+                    .map(|track| (track.id, track.name.clone()))
+                {
+                    if self.project_state.timeline.move_track_down(track_id) {
+                        if let Some(new_idx) = self
+                            .project_state
+                            .timeline
+                            .tracks
+                            .iter()
+                            .position(|track| track.id == track_id)
+                        {
+                            self.main_ui_state.selected_track_idx = new_idx;
+                        }
+                        self.main_ui_state.status_message =
+                            Some(format!("轨道 '{}' 已下移", track_name));
+                    }
+                }
+            }
+            "new_track_above" | "insert_track_above" => {
+                let current_track_idx = self.main_ui_state.selected_track_idx;
+                let current_track_id = self
+                    .project_state
+                    .timeline
+                    .tracks
+                    .get(current_track_idx)
+                    .map(|track| track.id)
+                    .unwrap_or(TrackId(1));
+                let new_track_id = TrackId(self.next_track_id);
+                self.next_track_id += 1;
+                let new_track = Track::new(new_track_id, format!("Track_{}", new_track_id.0));
+                self.project_state
+                    .timeline
+                    .insert_track_above(current_track_id, new_track);
+                if let Some(new_idx) = self
+                    .project_state
+                    .timeline
+                    .tracks
+                    .iter()
+                    .position(|track| track.id == new_track_id)
+                {
+                    self.main_ui_state.selected_track_idx = new_idx;
+                }
+                self.main_ui_state.status_message =
+                    Some(format!("已在当前轨道上方插入新轨道 #{}", new_track_id.0));
+            }
+            "new_track_below" | "insert_track_below" => {
+                let current_track_idx = self.main_ui_state.selected_track_idx;
+                let current_track_id = self
+                    .project_state
+                    .timeline
+                    .tracks
+                    .get(current_track_idx)
+                    .map(|track| track.id)
+                    .unwrap_or(TrackId(1));
+                let new_track_id = TrackId(self.next_track_id);
+                self.next_track_id += 1;
+                let new_track = Track::new(new_track_id, format!("Track_{}", new_track_id.0));
+                self.project_state
+                    .timeline
+                    .insert_track_below(current_track_id, new_track);
+                if let Some(new_idx) = self
+                    .project_state
+                    .timeline
+                    .tracks
+                    .iter()
+                    .position(|track| track.id == new_track_id)
+                {
+                    self.main_ui_state.selected_track_idx = new_idx;
+                }
+                self.main_ui_state.status_message =
+                    Some(format!("已在当前轨道下方插入新轨道 #{}", new_track_id.0));
+            }
+            "delete_track" | "deltrack" | "remove_track" => {
+                if self.project_state.timeline.tracks.len() <= 1 {
+                    self.main_ui_state.status_message =
+                        Some("至少需要保留一条主轨道，无法继续删除".into());
+                } else {
+                    let track_idx = self.main_ui_state.selected_track_idx;
+                    if let Some((track_id, track_name)) = self
+                        .project_state
+                        .timeline
+                        .tracks
+                        .get(track_idx)
+                        .map(|track| (track.id, track.name.clone()))
+                    {
+                        self.project_state.timeline.remove_track(track_id);
+                        let max_idx = self.project_state.timeline.tracks.len().saturating_sub(1);
+                        self.main_ui_state.selected_track_idx =
+                            self.main_ui_state.selected_track_idx.min(max_idx);
+                        self.main_ui_state.status_message =
+                            Some(format!("已删除轨道 '{}'", track_name));
+                    }
+                }
+            }
+            "import_media" | "import" | "browse_media" => {
+                self.show_file_browser = true;
+                self.main_ui_state.status_message = Some("已打开媒体导入浏览器".into());
+            }
             "merge" => {
                 let track_idx = self.main_ui_state.selected_track_idx;
                 if let Some(track) = self.project_state.timeline.tracks.get(track_idx) {
@@ -1204,6 +1371,31 @@ impl VideoCutApp {
                 self.main_ui_state.is_muted = false;
                 self.main_ui_state.status_message =
                     Some(format!("已取消静音 (音量: {:.0}%)", self.main_ui_state.master_volume * 100.0));
+            }
+            "monitor_zoom" | "viewzoom" | "viewport_zoom" => {
+                if parts.len() == 1 {
+                    self.main_ui_state.status_message = Some(format!(
+                        "当前监视器视口缩放为 {:.0}%",
+                        self.main_ui_state.monitor_zoom * 100.0
+                    ));
+                } else {
+                    let arg = parts[1].trim().to_lowercase();
+                    let zoom = if matches!(arg.as_str(), "fit" | "auto" | "reset") {
+                        1.0
+                    } else {
+                        let normalized = arg.trim_end_matches('%').trim_end_matches('x');
+                        normalized
+                            .parse::<f32>()
+                            .ok()
+                            .map(|value| if value > 10.0 { value / 100.0 } else { value })
+                            .unwrap_or(self.main_ui_state.monitor_zoom)
+                    };
+                    self.main_ui_state.monitor_zoom = zoom.clamp(0.5, 2.0);
+                    self.main_ui_state.status_message = Some(format!(
+                        "监视器视口缩放已设置为 {:.0}%",
+                        self.main_ui_state.monitor_zoom * 100.0
+                    ));
+                }
             }
             "export" => {
                 if parts.len() > 1 {
@@ -2400,7 +2592,9 @@ impl eframe::App for VideoCutApp {
                     &mut self.project_state,
                     &mut self.main_ui_state,
                 ),
-                Page::Editor => crate::gui::editor::show(ui, &mut self.editor_state),
+                Page::Editor => {
+                    crate::gui::editor::show(ui, &self.project_state, &mut self.editor_state)
+                }
             });
 
         // 浮层文件浏览器
@@ -3224,6 +3418,47 @@ mod tests {
             .contains("未检测到冲突"));
 
         let _ = std::fs::remove_dir_all(tmp_dir);
+    }
+
+    #[test]
+    fn test_track_management_and_monitor_zoom_commands() {
+        let mut app = VideoCutApp::new_for_test();
+        assert_eq!(app.project_state.timeline.tracks.len(), 1);
+        assert_eq!(app.main_ui_state.selected_track_idx, 0);
+
+        app.execute_command_line(":new_track_below");
+        assert_eq!(app.project_state.timeline.tracks.len(), 2);
+        assert_eq!(app.main_ui_state.selected_track_idx, 1);
+
+        app.execute_command_line(":track_up");
+        assert_eq!(app.project_state.timeline.tracks[0].id, TrackId(10));
+        assert_eq!(app.main_ui_state.selected_track_idx, 0);
+
+        app.execute_command_line(":pin");
+        assert!(app.project_state.timeline.tracks[0].is_pinned);
+
+        app.execute_command_line(":unpin");
+        assert!(!app.project_state.timeline.tracks[0].is_pinned);
+
+        app.execute_command_line(":monitor_zoom 150");
+        assert!((app.main_ui_state.monitor_zoom - 1.5).abs() < 0.001);
+        app.execute_command_line(":monitor_zoom fit");
+        assert!((app.main_ui_state.monitor_zoom - 1.0).abs() < 0.001);
+
+        app.execute_command_line(":import_media");
+        assert!(app.show_file_browser);
+
+        app.execute_command_line(":delete_track");
+        assert_eq!(app.project_state.timeline.tracks.len(), 1);
+        assert_eq!(app.main_ui_state.selected_track_idx, 0);
+
+        app.execute_command_line(":delete_track");
+        assert!(app
+            .main_ui_state
+            .status_message
+            .as_ref()
+            .unwrap()
+            .contains("至少需要保留一条主轨道"));
     }
 
     #[test]
