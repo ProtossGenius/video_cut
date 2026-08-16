@@ -3,3 +3,8 @@ target/
 .cache/
 *.vcut.temp
 *.wal
+
+
+# Added by cargo
+
+/target
