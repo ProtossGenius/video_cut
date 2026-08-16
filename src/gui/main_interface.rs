@@ -185,6 +185,8 @@ pub struct MainInterfaceUiState {
     pub history_search: String,
     pub history_selected_idx: usize,
     pub history_search_active: bool,
+    pub macro_recorder: crate::keybinding::MacroRecorder, // 键盘宏录制与回放器
+    pub macro_pending_prefix: Option<char>, // 正在等待输入的宏寄存器前缀 ('q' 或 '@')
     pub command_input: String,
     pub is_command_mode: bool,
     pub media_search: String,
@@ -222,6 +224,8 @@ impl Default for MainInterfaceUiState {
             history_search: String::new(),
             history_selected_idx: 0,
             history_search_active: false,
+            macro_recorder: crate::keybinding::MacroRecorder::default(),
+            macro_pending_prefix: None,
             command_input: String::new(),
             is_command_mode: false,
             media_search: String::new(),
@@ -1225,6 +1229,24 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
             ui.label(mode_badge);
 
             ui.add_space(10.0);
+            if let Some(reg) = state.macro_recorder.current_register() {
+                ui.label(
+                    RichText::new(format!("● RECORDING @{}", reg))
+                        .size(12.5)
+                        .color(Theme::ACCENT_ORANGE)
+                        .strong(),
+                );
+                ui.add_space(8.0);
+            } else if let Some(prefix) = state.macro_pending_prefix {
+                let hint = if prefix == 'q' {
+                    "宏录制: 请输入目标寄存器 (a-z)..."
+                } else {
+                    "宏回放: 请输入寄存器 (a-z) 或再次按 @ 重复执行..."
+                };
+                ui.label(RichText::new(hint).size(12.0).color(Theme::ACCENT_ORANGE).strong());
+                ui.add_space(8.0);
+            }
+
             if let Some(ref mark) = state.anchor_mark_session {
                 let scope_text = if mark.scope == AnchorScope::Global { "全局" } else { "切片" };
                 if mark.is_multichar {

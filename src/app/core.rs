@@ -400,6 +400,90 @@ impl VideoCutApp {
             }
         }
     }
+
+    /// 执行按键映射后的统一动作 (并自动记录到宏录制器)
+    pub fn execute_action(&mut self, action: crate::keybinding::Action) {
+        if self.main_ui_state.macro_recorder.is_recording() {
+            self.main_ui_state.macro_recorder.record_action(action.clone());
+        }
+
+        match action {
+            crate::keybinding::Action::PlayPause => {
+                self.main_ui_state.is_playing = !self.main_ui_state.is_playing;
+            }
+            crate::keybinding::Action::MoveLeft => {
+                let step = if self.main_ui_state.zoom_level > 0.0 {
+                    (1_000_000.0 / self.main_ui_state.zoom_level * 5.0) as i64
+                } else {
+                    100_000
+                };
+                self.main_ui_state.playhead_us = (self.main_ui_state.playhead_us - step).max(0);
+            }
+            crate::keybinding::Action::MoveRight => {
+                let step = if self.main_ui_state.zoom_level > 0.0 {
+                    (1_000_000.0 / self.main_ui_state.zoom_level * 5.0) as i64
+                } else {
+                    100_000
+                };
+                self.main_ui_state.playhead_us += step;
+            }
+            crate::keybinding::Action::MoveUp => {
+                self.main_ui_state.selected_track_idx = self.main_ui_state.selected_track_idx.saturating_sub(1);
+            }
+            crate::keybinding::Action::MoveDown => {
+                let total = self.project_state.timeline.tracks.len();
+                if self.main_ui_state.selected_track_idx + 1 < total {
+                    self.main_ui_state.selected_track_idx += 1;
+                }
+            }
+            crate::keybinding::Action::Split => {
+                let playhead = FrameTime(self.main_ui_state.playhead_us);
+                let track_idx = self.main_ui_state.selected_track_idx;
+                let target = self.project_state.timeline.tracks.get(track_idx).and_then(|track| {
+                    track.clips.iter().find(|c| playhead > c.timeline_start && playhead < c.timeline_end()).map(|c| (track.id, c.id))
+                });
+                if let Some((track_id, clip_id)) = target {
+                    let new_id = ClipId(self.next_clip_id);
+                    self.next_clip_id += 1;
+                    let cmd = crate::project::SplitClipCommand::new(track_id, clip_id, playhead, new_id);
+                    let _ = self.command_history.execute(Box::new(cmd), &mut self.project_state);
+                    self.main_ui_state.status_message = Some(format!("已在 {} 处成功分割切片", playhead));
+                }
+            }
+            crate::keybinding::Action::Delete => {
+                let playhead = FrameTime(self.main_ui_state.playhead_us);
+                let track_idx = self.main_ui_state.selected_track_idx;
+                let target = self.project_state.timeline.tracks.get(track_idx).and_then(|track| {
+                    track.clips.iter().find(|c| playhead >= c.timeline_start && playhead <= c.timeline_end()).map(|c| (track.id, c.id, c.name.clone()))
+                });
+                if let Some((track_id, clip_id, clip_name)) = target {
+                    let cmd = crate::project::DeleteClipToTrashCommand::new(track_id, clip_id);
+                    let _ = self.command_history.execute(Box::new(cmd), &mut self.project_state);
+                    self.main_ui_state.status_message = Some(format!("已将切片 '{}' 移动至垃圾回收轨道", clip_name));
+                }
+            }
+            crate::keybinding::Action::EnterVisual => {
+                self.main_ui_state.current_mode = Mode::Visual;
+                self.main_ui_state.visual_start_us = Some(self.main_ui_state.playhead_us);
+                self.main_ui_state.visual_end_us = Some(self.main_ui_state.playhead_us);
+            }
+            crate::keybinding::Action::EnterVisualLine => {
+                self.main_ui_state.current_mode = Mode::VisualLine;
+            }
+            crate::keybinding::Action::EnterCommand => {
+                self.main_ui_state.is_command_mode = true;
+                self.main_ui_state.command_input.clear();
+            }
+            crate::keybinding::Action::EscapeToNormal => {
+                self.main_ui_state.current_mode = Mode::Normal;
+                self.main_ui_state.visual_start_us = None;
+                self.main_ui_state.visual_end_us = None;
+                self.main_ui_state.visual_line_selected_clips.clear();
+                self.main_ui_state.biset_session = None;
+            }
+            _ => {}
+        }
+    }
 }
 
 fn setup_custom_fonts(ctx: &egui::Context) {
@@ -664,6 +748,56 @@ impl eframe::App for VideoCutApp {
                                 }
                             }
                         }
+                        // 0.3 如果处于等待宏寄存器输入状态 (q 或 @)
+                        else if let Some(prefix) = self.main_ui_state.macro_pending_prefix {
+                            if i.key_pressed(egui::Key::Escape) {
+                                self.main_ui_state.macro_pending_prefix = None;
+                                self.main_ui_state.status_message = Some("已取消宏操作".into());
+                            } else if prefix == 'q' {
+                                for t in &typed_texts {
+                                    if let Some(ch) = t.chars().next() {
+                                        if ch.is_ascii_alphabetic() {
+                                            self.main_ui_state.macro_recorder.start_recording(ch);
+                                            self.main_ui_state.macro_pending_prefix = None;
+                                            self.main_ui_state.status_message = Some(format!("开始录制宏 @{}", ch));
+                                            break;
+                                        }
+                                    }
+                                }
+                            } else if prefix == '@' {
+                                let mut handled = false;
+                                if typed_texts.iter().any(|t| t == "@" || t == "＠") {
+                                    // @@ 重复上一次执行的宏
+                                    if let Some(actions) = self.main_ui_state.macro_recorder.get_last_macro() {
+                                        self.main_ui_state.macro_pending_prefix = None;
+                                        self.main_ui_state.status_message = Some("重复执行上一次宏 (@@)".into());
+                                        for action in actions {
+                                            self.execute_action(action);
+                                        }
+                                        handled = true;
+                                    }
+                                }
+                                if !handled {
+                                    for t in &typed_texts {
+                                        if let Some(ch) = t.chars().next() {
+                                            if ch.is_ascii_alphabetic() {
+                                                if let Some(actions) = self.main_ui_state.macro_recorder.get_macro(ch) {
+                                                    self.main_ui_state.macro_pending_prefix = None;
+                                                    self.main_ui_state.status_message = Some(format!("已回放宏 @{}", ch));
+                                                    for action in actions {
+                                                        self.execute_action(action);
+                                                    }
+                                                } else {
+                                                    self.main_ui_state.macro_pending_prefix = None;
+                                                    self.main_ui_state.status_message = Some(format!("宏 @{} 未录制任何动作", ch));
+                                                }
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         // 1. 如果处于锚点标记会话 (AnchorMarkSession - m/M)
                         else if let Some(ref mut mark) = self.main_ui_state.anchor_mark_session {
                             if i.key_pressed(egui::Key::Escape) {
@@ -812,9 +946,23 @@ impl eframe::App for VideoCutApp {
                                 });
                             }
 
+                            // 宏录制与回放快捷键: q 键与 @ 键
+                            if !i.modifiers.shift && i.key_pressed(egui::Key::Q) {
+                                if self.main_ui_state.macro_recorder.is_recording() {
+                                    if let Some(reg) = self.main_ui_state.macro_recorder.stop_recording() {
+                                        self.main_ui_state.status_message = Some(format!("已停止录制并保存至宏 @{}", reg));
+                                    }
+                                } else {
+                                    self.main_ui_state.macro_pending_prefix = Some('q');
+                                }
+                            }
+                            if typed_texts.iter().any(|t| t == "@" || t == "＠") {
+                                self.main_ui_state.macro_pending_prefix = Some('@');
+                            }
+
                             // 空格播放/暂停
                             if i.key_pressed(egui::Key::Space) {
-                                self.main_ui_state.is_playing = !self.main_ui_state.is_playing;
+                                self.execute_action(crate::keybinding::Action::PlayPause);
                             }
 
                             // 左右微调播放头
@@ -1389,5 +1537,38 @@ mod tests {
         assert_eq!(app.main_ui_state.visual_start_us, Some(2_000_000));
         assert_eq!(app.main_ui_state.visual_end_us, Some(5_000_000));
         assert_eq!(app.main_ui_state.current_mode, Mode::Visual);
+    }
+
+    #[test]
+    fn test_macro_recording_and_execution() {
+        let mut app = VideoCutApp::new_for_test();
+        assert!(!app.main_ui_state.macro_recorder.is_recording());
+
+        // 1. 开始录制宏到寄存器 'a'
+        app.main_ui_state.macro_recorder.start_recording('a');
+        assert!(app.main_ui_state.macro_recorder.is_recording());
+
+        // 2. 执行动作
+        app.execute_action(crate::keybinding::Action::PlayPause);
+        assert!(app.main_ui_state.is_playing);
+
+        app.execute_action(crate::keybinding::Action::MoveRight);
+        assert!(app.main_ui_state.playhead_us > 0);
+
+        // 3. 停止录制
+        let reg = app.main_ui_state.macro_recorder.stop_recording();
+        assert_eq!(reg, Some('a'));
+        assert!(!app.main_ui_state.macro_recorder.is_recording());
+
+        // 4. 重置状态并回放宏 @a
+        app.main_ui_state.is_playing = false;
+        let playhead_before = app.main_ui_state.playhead_us;
+        let actions = app.main_ui_state.macro_recorder.get_macro('a').unwrap();
+        for action in actions {
+            app.execute_action(action);
+        }
+
+        assert!(app.main_ui_state.is_playing);
+        assert!(app.main_ui_state.playhead_us > playhead_before);
     }
 }
