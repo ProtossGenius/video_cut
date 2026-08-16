@@ -209,7 +209,9 @@ graph LR
 | ├─ 音频处理 | [03-media/02-audio/](./03-media/02-audio/README.md) | 音频播放、主时钟、重采样 |
 | ├─ 缩略图 | [03-media/03-thumbnail/](./03-media/03-thumbnail/README.md) | SIMD 加速缩略图生成 |
 | ├─ 波形图 | [03-media/04-waveform/](./03-media/04-waveform/README.md) | 多分辨率波形数据 |
-| └─ 帧缓存 | [03-media/05-frame-cache/](./03-media/05-frame-cache/README.md) | 三级缓存策略 |
+| ├─ 帧缓存 | [03-media/05-frame-cache/](./03-media/05-frame-cache/README.md) | 三级缓存策略 |
+| ├─ 代理媒体 | [03-media/06-proxy-media/](./03-media/06-proxy-media/README.md) | 低清代理、离线粗剪 |
+| └─ 音频 EQ / Loudness | [03-media/07-audio-eq/](./03-media/07-audio-eq/README.md) | 三段 EQ、EBU R128 标准化 |
 
 ### 快捷键系统
 
@@ -218,7 +220,9 @@ graph LR
 | 快捷键 | [04-keybinding/](./04-keybinding/README.md) | 模态编辑、Trie 树 |
 | ├─ 模态系统 | [04-keybinding/01-modal-system/](./04-keybinding/01-modal-system/README.md) | Normal/Visual/Command 等模式 |
 | ├─ 按键 Trie | [04-keybinding/02-key-trie/](./04-keybinding/02-key-trie/README.md) | 按键序列解析 |
-| └─ 命令模式 | [04-keybinding/03-command-mode/](./04-keybinding/03-command-mode/README.md) | 冒号命令系统 |
+| ├─ 命令模式 | [04-keybinding/03-command-mode/](./04-keybinding/03-command-mode/README.md) | 冒号命令系统 |
+| ├─ 键盘宏持久化 | [04-keybinding/04-macro-persistence/](./04-keybinding/04-macro-persistence/README.md) | JSON/Lua 宏存档 |
+| └─ 键位预设 / 冲突检测 | [04-keybinding/05-keymap-profiles/](./04-keybinding/05-keymap-profiles/README.md) | Vim/PR/FCP 预设与导入导出 |
 
 ### 特效与属性
 

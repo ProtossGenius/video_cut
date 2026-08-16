@@ -28,6 +28,8 @@ pub struct Track {
     pub is_muted: bool,
     /// 是否独奏
     pub is_solo: bool,
+    /// 轨道级音频处理链（3 段 EQ + EBU R128 响度标准化）
+    pub audio_processor: crate::media::audio_pipeline::TrackAudioProcessor,
     /// 轨道色彩标签 (Color Tag)
     pub color_tag: super::clip::ColorTagPreset,
 }
@@ -44,6 +46,7 @@ impl Track {
             pan: 0.0,
             is_muted: false,
             is_solo: false,
+            audio_processor: crate::media::audio_pipeline::TrackAudioProcessor::default(),
             color_tag: super::clip::ColorTagPreset::None,
         }
     }

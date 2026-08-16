@@ -259,17 +259,7 @@ impl LuaRuntime {
 }
 
 fn parse_mode_str(s: &str) -> Mode {
-    match s.to_lowercase().as_str() {
-        "visual" => Mode::Visual,
-        "v-line" | "visualline" => Mode::VisualLine,
-        "command" => Mode::Command,
-        "insert" => Mode::Insert,
-        "editor" => Mode::Editor,
-        "search" => Mode::Search,
-        "mark" => Mode::Mark,
-        "goto" => Mode::Goto,
-        _ => Mode::Normal,
-    }
+    Mode::from_str_loose(s)
 }
 
 fn value_to_coord_str(val: Value) -> String {

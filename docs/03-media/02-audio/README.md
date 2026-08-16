@@ -22,5 +22,9 @@
 - **轨道混音器计算 (Track Panning Math)**：采用等功率常数能量声相定律（Constant Power Panning Law: $L = \cos(\frac{\pi}{4}(1 + pan)), R = \sin(\frac{\pi}{4}(1 + pan))$），保证声相从左移至右时总听觉响度恒定不变。
 - **轨道表头 UI 集成**：在左侧轨道表头中直观展示各轨道的音量增益百分比与声相旋钮滑块。
 
+## 三段参数均衡器与响度标准化 (3-Band Parametric EQ & Loudness)
+- **三段参数 EQ**：当前轨道支持低频 / 中频 / 高频三段参数均衡器，命令形态为 `:eq low 120 -3 0.8`、`:eq mid 2200 2.5 1.2`、`:eq high 9500 1.8 0.7`，也支持 `:eq preset podcast`、`:eq preset vocal` 等一键预设。
+- **EBU R128 响度目标**：支持 `:loudnorm stream`（-14 LUFS）与 `:loudnorm broadcast`（-23 LUFS）直接计算建议增益，并将结果写入轨道音频处理链。
+- **实时状态可见**：轨道表头会显示 `EQ Flat` / `EQ +/-dB` 与 `-14 LUFS +x.xdB` 等状态摘要，便于快速复核。
 
 

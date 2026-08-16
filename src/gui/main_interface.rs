@@ -318,6 +318,27 @@ pub fn get_all_command_help_items() -> Vec<CommandHelpItem> {
             category: "高级功能",
         },
         CommandHelpItem {
+            name: ":proxy",
+            alias: "",
+            args: "[on|off|toggle]",
+            description: "开启、关闭或切换低分辨率代理媒体预览模式",
+            category: "媒体处理",
+        },
+        CommandHelpItem {
+            name: ":gen_proxy",
+            alias: ":genproxy",
+            args: "[720p|360p|half|quarter]",
+            description: "为当前切片或 VisualLine 选区批量生成低清代理媒体缓存",
+            category: "媒体处理",
+        },
+        CommandHelpItem {
+            name: ":proxy_status",
+            alias: ":proxystatus",
+            args: "",
+            description: "查看当前工程全部代理媒体的就绪状态与目标分辨率",
+            category: "媒体处理",
+        },
+        CommandHelpItem {
             name: ":pack_project",
             alias: ":bundle",
             args: "[dir]",
@@ -350,6 +371,20 @@ pub fn get_all_command_help_items() -> Vec<CommandHelpItem> {
             alias: ":track_pan",
             args: "<-1.0~1.0>",
             description: "设置当前轨道的立体声左右声相平衡 (-1.0 全左, 0.0 居中, 1.0 全右)",
+            category: "音频控制",
+        },
+        CommandHelpItem {
+            name: ":eq",
+            alias: "",
+            args: "[preset <flat|podcast|vocal|bass_cut|bright> | <low|mid|high> <freq_hz> <gain_db> [q]]",
+            description: "设置当前轨道的高/中/低三段参数均衡器 (3-Band Parametric EQ)",
+            category: "音频控制",
+        },
+        CommandHelpItem {
+            name: ":loudnorm",
+            alias: ":lufs",
+            args: "[stream|-14|broadcast|-23|off]",
+            description: "为当前轨道计算并应用 EBU R128 响度标准化目标增益",
             category: "音频控制",
         },
         CommandHelpItem {
@@ -471,6 +506,34 @@ pub fn get_all_command_help_items() -> Vec<CommandHelpItem> {
             description: "弹出支持的命令列表参考窗口，支持 / 键搜索筛选",
             category: "帮助系统",
         },
+        CommandHelpItem {
+            name: ":keymap",
+            alias: ":bindings",
+            args: "[vim|premiere|fcp|cycle]",
+            description: "切换 Vim / Premiere / Final Cut Pro 键位预设或查看当前键位状态",
+            category: "快捷键系统",
+        },
+        CommandHelpItem {
+            name: ":import_keymap",
+            alias: ":load_keymap",
+            args: "<path.(json|lua)>",
+            description: "从 JSON 或 Lua 文件导入自定义键位映射字典",
+            category: "快捷键系统",
+        },
+        CommandHelpItem {
+            name: ":export_keymap",
+            alias: ":save_keymap",
+            args: "<path.(json|lua)>",
+            description: "将当前键位预设导出为 JSON 或 Lua 文件",
+            category: "快捷键系统",
+        },
+        CommandHelpItem {
+            name: ":keymap_conflicts",
+            alias: ":keyconflicts",
+            args: "",
+            description: "查看当前键位 Trie 检测出的重复/前缀冲突列表",
+            category: "快捷键系统",
+        },
     ]
 }
 
@@ -519,6 +582,8 @@ pub struct MainInterfaceUiState {
     pub beat_snap_enabled: bool, // 音频节拍与瞬态吸附开关 (默认开启)
     pub active_snap_guide: Option<crate::timeline::SnapResult>, // 当前吸附对齐标尺线与说明
     pub show_easing_modal: bool, // :easing / :curve 弹出的贝塞尔缓动曲线可视化编辑器
+    pub proxy_manager: crate::media::ProxyManager, // 虚拟低清代理媒体管理器
+    pub keymap_manager: crate::keybinding::KeymapProfileManager, // 键位映射预设与冲突检测管理器
 }
 
 impl Default for MainInterfaceUiState {
@@ -545,6 +610,7 @@ impl Default for MainInterfaceUiState {
             show_export_modal: false,
             export_state: crate::rendering::smart_export::ExportTaskState::default(),
             export_queue: crate::rendering::smart_export::ExportQueue::default(),
+            proxy_manager: crate::media::ProxyManager::default(),
             macro_recorder: crate::keybinding::MacroRecorder::default(),
             macro_pending_prefix: None,
             master_volume: 1.0,
@@ -568,6 +634,7 @@ impl Default for MainInterfaceUiState {
             beat_snap_enabled: true,
             active_snap_guide: None,
             show_easing_modal: false,
+            keymap_manager: crate::keybinding::KeymapProfileManager::default(),
         }
     }
 }
@@ -939,7 +1006,39 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                     painter.text(
                         badge_pos,
                         egui::Align2::LEFT_TOP,
-                        format!("Layer {}: Track #{} Clip #{} [100% 1920x1080]", idx + 1, layer.track_id.0, layer.clip_id.0),
+                        {
+                            let media_label = project
+                                .timeline
+                                .tracks
+                                .iter()
+                                .find(|track| track.id == layer.track_id)
+                                .and_then(|track| track.clips.iter().find(|clip| clip.id == layer.clip_id))
+                                .and_then(|clip| {
+                                    state.proxy_manager.proxy_for_asset(clip.source).map(|proxy| {
+                                        if state.proxy_manager.global_proxy_enabled
+                                            && proxy.is_proxy_active
+                                            && proxy.is_ready()
+                                        {
+                                            format!(
+                                                "PROXY {} {}x{}",
+                                                proxy.resolution.short_label(),
+                                                proxy.target_width,
+                                                proxy.target_height
+                                            )
+                                        } else {
+                                            format!("MASTER {}x{}", proxy.source_width, proxy.source_height)
+                                        }
+                                    })
+                                })
+                                .unwrap_or_else(|| "MASTER 1920x1080".to_string());
+                            format!(
+                                "Layer {}: Track #{} Clip #{} [{}]",
+                                idx + 1,
+                                layer.track_id.0,
+                                layer.clip_id.0,
+                                media_label
+                            )
+                        },
                         egui::FontId::monospace(10.5),
                         Theme::ACCENT_CYAN,
                     );
@@ -1543,6 +1642,50 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                                     ui.close();
                                 }
                             });
+                            ui.menu_button("🎛 三段参数均衡器", |ui| {
+                                if ui.button("Flat / 重置").clicked() {
+                                    state.command_input = ":eq preset flat".into();
+                                    state.is_command_mode = true;
+                                    ui.close();
+                                }
+                                if ui.button("Podcast / 人声播客增强").clicked() {
+                                    state.command_input = ":eq preset podcast".into();
+                                    state.is_command_mode = true;
+                                    ui.close();
+                                }
+                                if ui.button("Vocal / 明亮人声").clicked() {
+                                    state.command_input = ":eq preset vocal".into();
+                                    state.is_command_mode = true;
+                                    ui.close();
+                                }
+                                if ui.button("Bass Cut / 低频清理").clicked() {
+                                    state.command_input = ":eq preset bass_cut".into();
+                                    state.is_command_mode = true;
+                                    ui.close();
+                                }
+                                if ui.button("Bright / 高频空气感").clicked() {
+                                    state.command_input = ":eq preset bright".into();
+                                    state.is_command_mode = true;
+                                    ui.close();
+                                }
+                            });
+                            ui.menu_button("📏 EBU R128 响度标准化", |ui| {
+                                if ui.button("Streaming -14 LUFS").clicked() {
+                                    state.command_input = ":loudnorm stream".into();
+                                    state.is_command_mode = true;
+                                    ui.close();
+                                }
+                                if ui.button("Broadcast -23 LUFS").clicked() {
+                                    state.command_input = ":loudnorm broadcast".into();
+                                    state.is_command_mode = true;
+                                    ui.close();
+                                }
+                                if ui.button("关闭响度标准化").clicked() {
+                                    state.command_input = ":loudnorm off".into();
+                                    state.is_command_mode = true;
+                                    ui.close();
+                                }
+                            });
                             if ui.button(RichText::new("❌ 删除此轨道").color(Color32::from_rgb(240, 80, 80))).clicked() {
                                 ui.close();
                             }
@@ -1579,6 +1722,32 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                             egui::Align2::LEFT_TOP,
                             format!("🎚{:.0}% | Pan:{}", track.volume * 100.0, pan_label),
                             egui::FontId::monospace(10.0),
+                            Theme::TEXT_MUTED,
+                        );
+                        let eq_badge = if track.audio_processor.eq.is_active() {
+                            format!(
+                                "EQ {} / {} / {}",
+                                track.audio_processor.eq.low.gain_db.round() as i32,
+                                track.audio_processor.eq.mid.gain_db.round() as i32,
+                                track.audio_processor.eq.high.gain_db.round() as i32
+                            )
+                        } else {
+                            "EQ Flat".to_string()
+                        };
+                        let loud_badge = if track.audio_processor.loudness.enabled {
+                            format!(
+                                "{} {:+.1}dB",
+                                track.audio_processor.loudness.target.short_label(),
+                                track.audio_processor.loudness.gain_db
+                            )
+                        } else {
+                            "Loudness Off".to_string()
+                        };
+                        painter.text(
+                            pos2(header_rect.min.x + 8.0, header_rect.min.y + 44.0),
+                            egui::Align2::LEFT_TOP,
+                            format!("{} | {}", eq_badge, loud_badge),
+                            egui::FontId::monospace(8.5),
                             Theme::TEXT_MUTED,
                         );
 
@@ -1670,6 +1839,29 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                                     }
                                     if ui.button("2.0x (倍速)").clicked() {
                                         state.command_input = ":speed 2.0".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                });
+                                ui.menu_button("⚡ 代理媒体", |ui| {
+                                    if ui.button("生成 720p 代理 (:gen_proxy 720p)").clicked() {
+                                        state.command_input = ":gen_proxy 720p".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("生成 360p 极速代理 (:gen_proxy 360p)").clicked() {
+                                        state.command_input = ":gen_proxy 360p".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    ui.separator();
+                                    if ui.button("切换全局代理预览 (:proxy toggle)").clicked() {
+                                        state.command_input = ":proxy toggle".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("查看代理状态 (:proxy_status)").clicked() {
+                                        state.command_input = ":proxy_status".into();
                                         state.is_command_mode = true;
                                         ui.close();
                                     }
@@ -2386,6 +2578,35 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                 if ui.button(RichText::new(beat_text).size(11.0).color(beat_color).strong()).clicked() {
                     state.beat_snap_enabled = !state.beat_snap_enabled;
                 }
+                ui.add_space(6.0);
+                let proxy_text = if state.proxy_manager.global_proxy_enabled { "⚡ PROXY: ON" } else { "⚡ PROXY: OFF" };
+                let proxy_color = if state.proxy_manager.global_proxy_enabled { Theme::ACCENT_GREEN } else { Theme::TEXT_MUTED };
+                if ui.button(RichText::new(proxy_text).size(11.0).color(proxy_color).strong()).clicked() {
+                    let enabled = state.proxy_manager.toggle_global_proxy();
+                    state.status_message = Some(format!(
+                        "代理媒体预览已{}",
+                        if enabled { "开启" } else { "关闭" }
+                    ));
+                }
+                ui.add_space(6.0);
+                let keymap_text = if state.keymap_manager.conflicts.is_empty() {
+                    format!("⌨ {}", state.keymap_manager.active_profile_short_label())
+                } else {
+                    format!(
+                        "⌨ {} !{}",
+                        state.keymap_manager.active_profile_short_label(),
+                        state.keymap_manager.conflicts.len()
+                    )
+                };
+                let keymap_color = if state.keymap_manager.conflicts.is_empty() {
+                    Theme::ACCENT_PURPLE
+                } else {
+                    Theme::ACCENT_ORANGE
+                };
+                if ui.button(RichText::new(keymap_text).size(11.0).color(keymap_color).strong()).clicked() {
+                    let next = state.keymap_manager.cycle_builtin_profile();
+                    state.status_message = Some(format!("已切换快捷键预设: {}", next.display_name()));
+                }
             });
         });
     });
@@ -2779,6 +3000,20 @@ fn draw_help_modal(ui: &mut Ui, state: &mut MainInterfaceUiState) {
                         .size(16.0)
                         .strong()
                         .color(Theme::ACCENT_CYAN),
+                );
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new(format!(
+                        "当前预设: {} | Trie 冲突: {}",
+                        state.keymap_manager.active_profile_name(),
+                        state.keymap_manager.conflicts.len()
+                    ))
+                    .size(11.0)
+                    .color(if state.keymap_manager.conflicts.is_empty() {
+                        Theme::TEXT_MUTED
+                    } else {
+                        Theme::ACCENT_ORANGE
+                    }),
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui
@@ -4196,7 +4431,10 @@ mod tests {
     #[test]
     fn test_command_help_items_and_search_filter() {
         let items = get_all_command_help_items();
-        assert!(items.len() >= 15);
+        assert!(items.len() >= 20);
+        assert!(items.iter().any(|i| i.name == ":proxy"));
+        assert!(items.iter().any(|i| i.name == ":eq"));
+        assert!(items.iter().any(|i| i.name == ":keymap"));
 
         // 搜索 "split"
         let split_results: Vec<&CommandHelpItem> = items

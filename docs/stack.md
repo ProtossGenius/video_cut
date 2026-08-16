@@ -95,3 +95,6 @@
 78. [x] **完成任务**：实装键盘宏序列化持久化与状态栏录制指示器 (`:macros`/`:save_macros`/`:load_macros`, MacroRecorder)
 79. [x] **完成任务**：实装视频导出进度预估与多格式转码队列 (`:export`/`:export_queue`, ExportQueue & ETA)
 80. [x] **完成任务**：实装全局项目打包归档与资产自包含导出 (`:pack_project`/`:unpack_project`, ProjectBundle)
+81. [x] **完成任务**：实装虚拟代理剪辑流与低分辨率下采样缓存生成器 (`:proxy`/`:gen_proxy`, ProxyManager)
+82. [x] **完成任务**：实装音频多段参数均衡器与 EBU R128 响度标准化预设 (`:eq`/`:loudnorm`, TrackAudioProcessor)
+83. [x] **完成任务**：实装快捷键冲突检测与自定义键位映射字典导入导出 (`:keymap`/`:import_keymap`/`:export_keymap`, KeymapProfileManager)

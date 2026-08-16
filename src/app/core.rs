@@ -928,6 +928,88 @@ impl VideoCutApp {
                     self.main_ui_state.status_message = Some(format!("寄存器 @{} 未录制任何宏", reg));
                 }
             }
+            "proxy" => {
+                let arg = parts.get(1).copied().unwrap_or("toggle");
+                let enabled = match arg.to_lowercase().as_str() {
+                    "on" | "true" | "1" | "enable" => self.main_ui_state.proxy_manager.set_global_proxy(true),
+                    "off" | "false" | "0" | "disable" => self.main_ui_state.proxy_manager.set_global_proxy(false),
+                    _ => self.main_ui_state.proxy_manager.toggle_global_proxy(),
+                };
+                self.main_ui_state.status_message = Some(format!(
+                    "代理媒体预览已{} (就绪 {} 个代理素材)",
+                    if enabled { "开启" } else { "关闭" },
+                    self.main_ui_state.proxy_manager.ready_proxy_count()
+                ));
+            }
+            "gen_proxy" | "genproxy" => {
+                let resolution = parts
+                    .get(1)
+                    .and_then(|s| crate::media::ProxyResolution::from_str_loose(s))
+                    .unwrap_or(crate::media::ProxyResolution::Low720p);
+                let mut generated = 0usize;
+
+                if self.main_ui_state.current_mode == Mode::VisualLine
+                    && !self.main_ui_state.visual_line_selected_clips.is_empty()
+                {
+                    let selected = self.main_ui_state.visual_line_selected_clips.clone();
+                    for track in &self.project_state.timeline.tracks {
+                        for clip in &track.clips {
+                            if selected.contains(&clip.id) {
+                                self.main_ui_state.proxy_manager.generate_proxy_for_asset(
+                                    clip.source,
+                                    PathBuf::from(&clip.name),
+                                    None,
+                                    resolution,
+                                );
+                                generated += 1;
+                            }
+                        }
+                    }
+                } else {
+                    let track_idx = self.main_ui_state.selected_track_idx;
+                    if let Some(track) = self.project_state.timeline.tracks.get(track_idx) {
+                        let playhead = FrameTime(self.main_ui_state.playhead_us);
+                        if let Some(clip) = track
+                            .clips
+                            .iter()
+                            .find(|c| playhead >= c.timeline_start && playhead <= c.timeline_end())
+                        {
+                            self.main_ui_state.proxy_manager.generate_proxy_for_asset(
+                                clip.source,
+                                PathBuf::from(&clip.name),
+                                None,
+                                resolution,
+                            );
+                            generated = 1;
+                        }
+                    }
+                }
+
+                if generated > 0 {
+                    self.main_ui_state.status_message = Some(format!(
+                        "已生成 {} 个 {} 代理媒体缓存",
+                        generated,
+                        resolution.short_label()
+                    ));
+                } else {
+                    self.main_ui_state.status_message =
+                        Some("当前播放头下没有可生成代理的切片".into());
+                }
+            }
+            "proxy_status" | "proxystatus" => {
+                let summaries = self.main_ui_state.proxy_manager.status_summary_lines();
+                if summaries.is_empty() {
+                    self.main_ui_state.status_message = Some("当前工程暂无代理媒体记录".into());
+                } else {
+                    self.main_ui_state.history_output.push("=== Proxy Media Status ===".into());
+                    self.main_ui_state.history_output.extend(summaries);
+                    self.main_ui_state.show_message_window = true;
+                    self.main_ui_state.status_message = Some(format!(
+                        "当前工程共有 {} 条代理媒体记录",
+                        self.main_ui_state.proxy_manager.proxies.len()
+                    ));
+                }
+            }
             "detach_audio" | "detachaudio" | "split_av" | "splitav" => {
                 let track_idx = self.main_ui_state.selected_track_idx;
                 let track_id_opt = self.project_state.timeline.tracks.get(track_idx).map(|t| t.id);
@@ -997,6 +1079,108 @@ impl VideoCutApp {
                     } else {
                         self.main_ui_state.status_message =
                             Some(format!("当前轨道 '{}' 声相: {:+.2}", track.name, track.pan));
+                    }
+                }
+            }
+            "eq" => {
+                let track_idx = self.main_ui_state.selected_track_idx;
+                if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                    if parts.len() == 1 {
+                        self.main_ui_state.status_message = Some(format!(
+                            "轨道 '{}' EQ: {}",
+                            track.name,
+                            track.audio_processor.eq.summary_line()
+                        ));
+                    } else if matches!(parts[1].to_lowercase().as_str(), "flat" | "reset") {
+                        track
+                            .audio_processor
+                            .apply_eq_preset(crate::media::EqPreset::Flat);
+                        self.main_ui_state.status_message =
+                            Some(format!("轨道 '{}' 三段 EQ 已重置为 Flat", track.name));
+                    } else if matches!(parts[1].to_lowercase().as_str(), "preset" | "profile") {
+                        let preset_str = parts.get(2).copied().unwrap_or("podcast");
+                        if let Some(preset) = crate::media::EqPreset::from_str_loose(preset_str) {
+                            track.audio_processor.apply_eq_preset(preset);
+                            self.main_ui_state.status_message = Some(format!(
+                                "轨道 '{}' 已应用 EQ 预设: {}",
+                                track.name,
+                                preset.name()
+                            ));
+                        } else {
+                            self.main_ui_state.status_message =
+                                Some(format!("未知 EQ 预设: {}", preset_str));
+                        }
+                    } else if let Some(band) =
+                        crate::media::EqBandSelector::from_str_loose(parts[1])
+                    {
+                        let freq = parts
+                            .get(2)
+                            .and_then(|s| s.parse::<f32>().ok())
+                            .unwrap_or_else(|| band.default_frequency_hz());
+                        let gain_db = parts
+                            .get(3)
+                            .and_then(|s| s.parse::<f32>().ok())
+                            .unwrap_or(0.0);
+                        let q = parts
+                            .get(4)
+                            .and_then(|s| s.parse::<f32>().ok())
+                            .unwrap_or_else(|| band.default_q());
+                        track
+                            .audio_processor
+                            .set_eq_band(band, freq, gain_db, q);
+                        self.main_ui_state.status_message = Some(format!(
+                            "轨道 '{}' {} EQ 已设置为 {:.0}Hz / {:+.1}dB / Q{:.2}",
+                            track.name,
+                            band.name(),
+                            freq,
+                            gain_db,
+                            q
+                        ));
+                    } else {
+                        self.main_ui_state.status_message = Some(format!(
+                            "无法解析 EQ 命令: {}",
+                            parts[1]
+                        ));
+                    }
+                }
+            }
+            "loudnorm" | "lufs" => {
+                let track_idx = self.main_ui_state.selected_track_idx;
+                if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                    if parts
+                        .get(1)
+                        .map(|s| matches!(s.to_lowercase().as_str(), "off" | "disable" | "false" | "0"))
+                        .unwrap_or(false)
+                    {
+                        track.audio_processor.disable_loudness();
+                        self.main_ui_state.status_message = Some(format!(
+                            "轨道 '{}' 响度标准化已关闭",
+                            track.name
+                        ));
+                    } else {
+                        let target = parts
+                            .get(1)
+                            .and_then(|s| crate::media::LoudnessTarget::from_str_loose(s))
+                            .unwrap_or(crate::media::LoudnessTarget::StreamingMinus14);
+                        let measured_lufs = parts
+                            .get(2)
+                            .and_then(|s| s.parse::<f32>().ok())
+                            .unwrap_or_else(|| {
+                                crate::media::TrackAudioProcessor::estimate_track_input_lufs(
+                                    track.volume,
+                                    track.clips.len(),
+                                )
+                            });
+                        let state = track
+                            .audio_processor
+                            .apply_loudness_target(target, measured_lufs);
+                        self.main_ui_state.status_message = Some(format!(
+                            "轨道 '{}' 响度标准化目标: {} | 测得 {:.1} LUFS | 建议增益 {:+.1} dB",
+                            track.name,
+                            target.name(),
+                            state.measured_lufs,
+                            state.gain_db
+                        ));
                     }
                 }
             }
@@ -1094,6 +1278,79 @@ impl VideoCutApp {
                     }
                 } else {
                     self.main_ui_state.status_message = Some("请指定要解包的项目归档路径，例如: :unpack my_project.vcutpkg".into());
+                }
+            }
+            "keymap" | "bindings" => {
+                if parts.len() == 1 || parts[1].eq_ignore_ascii_case("status") {
+                    self.main_ui_state.status_message =
+                        Some(self.main_ui_state.keymap_manager.status_line());
+                } else if parts[1].eq_ignore_ascii_case("cycle") {
+                    let next = self.main_ui_state.keymap_manager.cycle_builtin_profile();
+                    self.main_ui_state.status_message =
+                        Some(format!("已切换快捷键预设: {}", next.display_name()));
+                } else if let Some(profile) =
+                    crate::keybinding::BuiltinKeymapProfile::from_str_loose(parts[1])
+                {
+                    self.main_ui_state.keymap_manager.switch_builtin(profile);
+                    self.main_ui_state.status_message = Some(format!(
+                        "已切换快捷键预设: {}",
+                        self.main_ui_state.keymap_manager.active_profile_name()
+                    ));
+                } else {
+                    self.main_ui_state.status_message =
+                        Some(format!("未知键位预设: {}", parts[1]));
+                }
+            }
+            "import_keymap" | "load_keymap" | "loadkeymap" => {
+                let path = parts.get(1).copied().unwrap_or("keymap_profile.json");
+                match self.main_ui_state.keymap_manager.import_from_path(path) {
+                    Ok(()) => {
+                        let conflict_count = self.main_ui_state.keymap_manager.conflicts.len();
+                        self.main_ui_state.status_message = Some(format!(
+                            "已导入键位映射: {} ({} 条绑定, {} 个冲突)",
+                            self.main_ui_state.keymap_manager.active_profile_name(),
+                            self.main_ui_state
+                                .keymap_manager
+                                .active_profile
+                                .bindings
+                                .len(),
+                            conflict_count
+                        ));
+                    }
+                    Err(e) => {
+                        self.main_ui_state.status_message =
+                            Some(format!("导入键位映射失败: {}", e));
+                    }
+                }
+            }
+            "export_keymap" | "save_keymap" | "savekeymap" => {
+                let path = parts.get(1).copied().unwrap_or("keymap_profile.json");
+                match self.main_ui_state.keymap_manager.export_active_profile(path) {
+                    Ok(()) => {
+                        self.main_ui_state.status_message =
+                            Some(format!("当前键位预设已导出至: {}", path));
+                    }
+                    Err(e) => {
+                        self.main_ui_state.status_message =
+                            Some(format!("导出键位映射失败: {}", e));
+                    }
+                }
+            }
+            "keymap_conflicts" | "keyconflicts" | "binding_conflicts" => {
+                let lines = self.main_ui_state.keymap_manager.conflict_report_lines();
+                if lines.is_empty() {
+                    self.main_ui_state.status_message =
+                        Some("当前键位 Trie 未检测到冲突".into());
+                } else {
+                    self.main_ui_state
+                        .history_output
+                        .push("=== Keymap Trie Conflicts ===".into());
+                    self.main_ui_state.history_output.extend(lines.clone());
+                    self.main_ui_state.show_message_window = true;
+                    self.main_ui_state.status_message = Some(format!(
+                        "检测到 {} 个键位冲突，详情已写入消息面板",
+                        lines.len()
+                    ));
                 }
             }
             "q" | "quit" => {
@@ -1256,15 +1513,36 @@ impl eframe::App for VideoCutApp {
             }
 
             let time = self.main_ui_state.playhead_us as f32 / 1_000_000.0;
+            let selected_track_gain = self
+                .project_state
+                .timeline
+                .tracks
+                .get(self.main_ui_state.selected_track_idx)
+                .map(|track| {
+                    if track.is_muted {
+                        0.0
+                    } else {
+                        track.volume * track.audio_processor.preview_gain_multiplier()
+                    }
+                })
+                .unwrap_or(1.0);
             let sim_left = if self.main_ui_state.is_muted {
                 0.0
             } else {
-                ((time * 4.5).sin().abs() * 0.75 * self.main_ui_state.master_volume).clamp(0.0, 1.0)
+                ((time * 4.5).sin().abs()
+                    * 0.75
+                    * self.main_ui_state.master_volume
+                    * selected_track_gain)
+                    .clamp(0.0, 1.0)
             };
             let sim_right = if self.main_ui_state.is_muted {
                 0.0
             } else {
-                ((time * 5.2).cos().abs() * 0.80 * self.main_ui_state.master_volume).clamp(0.0, 1.0)
+                ((time * 5.2).cos().abs()
+                    * 0.80
+                    * self.main_ui_state.master_volume
+                    * selected_track_gain)
+                    .clamp(0.0, 1.0)
             };
             self.main_ui_state.vu_meter.update(sim_left, sim_right, 0.016);
             ui.ctx().request_repaint();
@@ -2855,6 +3133,97 @@ mod tests {
         // 4. 取消队列 :cancel_export
         app.execute_command_line(":cancel_export");
         assert!(app.main_ui_state.status_message.as_ref().unwrap().contains("已取消"));
+    }
+
+    #[test]
+    fn test_proxy_commands() {
+        let mut app = VideoCutApp::new_for_test();
+        assert!(!app.main_ui_state.proxy_manager.global_proxy_enabled);
+
+        app.execute_command_line(":gen_proxy 720p");
+        let proxy = app
+            .main_ui_state
+            .proxy_manager
+            .proxy_for_asset(AssetId(1))
+            .unwrap();
+        assert_eq!(proxy.resolution, crate::media::ProxyResolution::Low720p);
+        assert!(proxy.is_ready());
+
+        app.execute_command_line(":proxy on");
+        assert!(app.main_ui_state.proxy_manager.global_proxy_enabled);
+
+        app.execute_command_line(":proxy_status");
+        assert!(app.main_ui_state.show_message_window);
+        assert!(app
+            .main_ui_state
+            .history_output
+            .iter()
+            .any(|line| line.contains("Proxy Media Status")));
+    }
+
+    #[test]
+    fn test_eq_and_loudnorm_commands() {
+        let mut app = VideoCutApp::new_for_test();
+        app.main_ui_state.selected_track_idx = 0;
+
+        app.execute_command_line(":eq preset podcast");
+        let processor = &app.project_state.timeline.tracks[0].audio_processor;
+        assert_eq!(processor.eq.low.gain_db, -3.5);
+        assert_eq!(processor.eq.mid.gain_db, 2.5);
+
+        app.execute_command_line(":eq high 9200 3.5 0.8");
+        let processor = &app.project_state.timeline.tracks[0].audio_processor;
+        assert_eq!(processor.eq.high.frequency_hz, 9_200.0);
+        assert_eq!(processor.eq.high.gain_db, 3.5);
+        assert!((processor.eq.high.q - 0.8).abs() < 0.001);
+
+        app.execute_command_line(":loudnorm broadcast");
+        let loudness = &app.project_state.timeline.tracks[0].audio_processor.loudness;
+        assert!(loudness.enabled);
+        assert_eq!(loudness.target, crate::media::LoudnessTarget::BroadcastMinus23);
+        assert!(loudness.gain_db.is_finite());
+
+        app.execute_command_line(":loudnorm off");
+        assert!(!app.project_state.timeline.tracks[0]
+            .audio_processor
+            .loudness
+            .enabled);
+    }
+
+    #[test]
+    fn test_keymap_profile_commands_and_import_export() {
+        let mut app = VideoCutApp::new_for_test();
+        let tmp_dir = std::env::temp_dir().join(format!("vcut_keymap_cmd_{}", std::process::id()));
+        let json_path = tmp_dir.join("active_keymap.json");
+        let lua_path = tmp_dir.join("active_keymap.lua");
+        let _ = std::fs::create_dir_all(&tmp_dir);
+
+        app.execute_command_line(":keymap premiere");
+        assert_eq!(app.main_ui_state.keymap_manager.active_profile_name(), "Premiere Pro");
+
+        app.execute_command_line(&format!(":export_keymap {}", json_path.display()));
+        assert!(json_path.exists());
+        app.execute_command_line(&format!(":export_keymap {}", lua_path.display()));
+        assert!(lua_path.exists());
+
+        app.execute_command_line(":keymap fcp");
+        assert_eq!(
+            app.main_ui_state.keymap_manager.active_profile_name(),
+            "Final Cut Pro"
+        );
+
+        app.execute_command_line(&format!(":import_keymap {}", json_path.display()));
+        assert_eq!(app.main_ui_state.keymap_manager.active_profile_name(), "Premiere Pro");
+
+        app.execute_command_line(":keymap_conflicts");
+        assert!(app
+            .main_ui_state
+            .status_message
+            .as_ref()
+            .unwrap()
+            .contains("未检测到冲突"));
+
+        let _ = std::fs::remove_dir_all(tmp_dir);
     }
 
     #[test]

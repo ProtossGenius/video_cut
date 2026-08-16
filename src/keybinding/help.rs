@@ -1,8 +1,9 @@
 use crate::keybinding::Mode;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
 /// 快捷键绑定定义
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KeyBindingItem {
     pub mode: Mode,
     pub key: String,
@@ -22,7 +23,7 @@ pub struct HelpDisplayEntry {
 }
 
 /// 快捷键与帮助面板注册管理系统
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct HelpSystem {
     pub bindings: Vec<KeyBindingItem>,
     pub group_descriptions: HashMap<String, String>,

@@ -4,3 +4,5 @@ VideoCut 实现零鼠标操作的基础是类似于 Vim 的快捷键和模态状
 - [模态系统](./01-modal-system/README.md)
 - [按键 Trie 树解析](./02-key-trie/README.md)
 - [命令模式](./03-command-mode/README.md)
+- [键盘宏持久化](./04-macro-persistence/README.md)
+- [键位预设、冲突检测与导入导出](./05-keymap-profiles/README.md)

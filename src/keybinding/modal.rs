@@ -29,4 +29,32 @@ impl Mode {
             Mode::Goto => "GOTO",
         }
     }
+
+    pub fn as_binding_str(&self) -> &'static str {
+        match self {
+            Mode::Normal => "normal",
+            Mode::Visual => "visual",
+            Mode::VisualLine => "visualline",
+            Mode::Command => "command",
+            Mode::Insert => "insert",
+            Mode::Editor => "editor",
+            Mode::Search => "search",
+            Mode::Mark => "mark",
+            Mode::Goto => "goto",
+        }
+    }
+
+    pub fn from_str_loose(s: &str) -> Self {
+        match s.trim().to_lowercase().as_str() {
+            "visual" => Mode::Visual,
+            "v-line" | "visualline" | "visual_line" => Mode::VisualLine,
+            "command" => Mode::Command,
+            "insert" => Mode::Insert,
+            "editor" => Mode::Editor,
+            "search" => Mode::Search,
+            "mark" => Mode::Mark,
+            "goto" => Mode::Goto,
+            _ => Mode::Normal,
+        }
+    }
 }
