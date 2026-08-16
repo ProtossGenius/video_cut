@@ -24,6 +24,10 @@ pub struct NavigationState {
     pub deleted_projects_stack: Vec<ProjectCardInfo>,
     pub clipboard_project: Option<ProjectCardInfo>,
     pub status_message: Option<(String, f64)>,
+    pub show_new_project_modal: bool,
+    pub new_project_input: String,
+    pub show_rename_project_modal: bool,
+    pub rename_project_input: String,
 }
 
 impl Default for NavigationState {
@@ -128,6 +132,10 @@ impl Default for NavigationState {
             deleted_projects_stack: Vec::new(),
             clipboard_project: None,
             status_message: None,
+            show_new_project_modal: false,
+            new_project_input: String::new(),
+            show_rename_project_modal: false,
+            rename_project_input: String::new(),
         }
     }
 }
@@ -250,6 +258,72 @@ impl NavigationState {
             self.selected_index = 1;
             self.set_status(format!("已粘贴新项目 '{}'", clip.title));
         }
+    }
+
+    /// 新建项目并加入列表首位
+    pub fn create_new_project(&mut self, title: &str) -> ProjectCardInfo {
+        let clean_title = if title.trim().is_empty() {
+            "未命名工程".to_string()
+        } else {
+            title.trim().to_string()
+        };
+        let pinyin = crate::search::PinyinFuzzyMatcher::to_pinyin_string(&clean_title);
+        let new_id = format!("proj_{}", self.projects.len() + 1);
+        let new_card = ProjectCardInfo {
+            id: new_id,
+            title: clean_title.clone(),
+            pinyin,
+            duration_str: "00:00".into(),
+            modified_time: "刚刚".into(),
+            clips_count: 0,
+            quick_key: 'a',
+            gradient_colors: (
+                Color32::from_rgb(50, 90, 150),
+                Color32::from_rgb(25, 40, 70),
+            ),
+        };
+        self.projects.insert(0, new_card.clone());
+        self.selected_index = 1;
+        self.set_status(format!("已新建工程: {}", clean_title));
+        new_card
+    }
+
+    /// 重命名当前选中的项目
+    pub fn rename_selected_project(&mut self, new_title: &str) {
+        if self.selected_index > 0 {
+            let filtered = self.filtered_indices();
+            if let Some(&proj_idx) = filtered.get(self.selected_index - 1) {
+                if let Some(proj) = self.projects.get_mut(proj_idx) {
+                    let clean = new_title.trim();
+                    if !clean.is_empty() {
+                        let old = proj.title.clone();
+                        proj.title = clean.to_string();
+                        proj.pinyin = crate::search::PinyinFuzzyMatcher::to_pinyin_string(clean);
+                        self.set_status(format!("已将项目 '{}' 重命名为 '{}'", old, clean));
+                    }
+                }
+            }
+        }
+    }
+
+    /// 克隆当前选中的项目为副本
+    pub fn clone_selected_project(&mut self) -> Option<ProjectCardInfo> {
+        if self.selected_index > 0 {
+            let filtered = self.filtered_indices();
+            if let Some(&proj_idx) = filtered.get(self.selected_index - 1) {
+                if let Some(orig) = self.projects.get(proj_idx) {
+                    let mut cloned = orig.clone();
+                    cloned.id = format!("proj_{}", self.projects.len() + 1);
+                    cloned.title = format!("{} (副本)", orig.title);
+                    cloned.modified_time = "刚刚".into();
+                    self.projects.insert(0, cloned.clone());
+                    self.selected_index = 1;
+                    self.set_status(format!("已创建副本项目: {}", cloned.title));
+                    return Some(cloned);
+                }
+            }
+        }
+        None
     }
 
     pub fn set_status(&mut self, msg: impl Into<String>) {
@@ -644,8 +718,11 @@ pub fn show(ui: &mut Ui, state: &mut NavigationState) {
                 let shortcuts = [
                     ("[?]", "帮助"),
                     ("[Shift+P]", "粘贴"),
+                    ("[Shift+C]", "克隆"),
                     ("[Shift+Y]", "复制"),
                     ("[Shift+D]", "删除"),
+                    ("[r]", "重命名"),
+                    ("[n]", "新建"),
                     ("[f]", "字母跳跃"),
                     ("[Enter]", "打开"),
                     ("[H/J/K/L]", "移动"),
@@ -666,6 +743,137 @@ pub fn show(ui: &mut Ui, state: &mut NavigationState) {
             });
         });
     });
+
+    if state.show_new_project_modal {
+        draw_new_project_modal(ui, state);
+    }
+
+    if state.show_rename_project_modal {
+        draw_rename_project_modal(ui, state);
+    }
+}
+
+/// 绘制新建项目交互弹窗
+fn draw_new_project_modal(ui: &mut Ui, state: &mut NavigationState) {
+    let full_rect = ui.max_rect();
+    let modal_w = 460.0;
+    let modal_h = 200.0;
+    let modal_rect = Rect::from_center_size(full_rect.center(), vec2(modal_w, modal_h));
+
+    ui.painter().rect_filled(full_rect, 0.0, Color32::from_black_alpha(160));
+    ui.painter().rect_filled(modal_rect, CornerRadius::same(10), Theme::BG_PANEL_ALT);
+    ui.painter().rect_stroke(
+        modal_rect,
+        CornerRadius::same(10),
+        Stroke::new(1.5, Theme::ACCENT_CYAN),
+        egui::StrokeKind::Inside,
+    );
+
+    let mut do_create = false;
+    let mut do_close = false;
+
+    ui.scope_builder(UiBuilder::new().max_rect(modal_rect.shrink(20.0)), |ui| {
+        ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("✨ 新建视频剪辑工程").size(16.0).strong().color(Theme::ACCENT_CYAN));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button(" ✕ (Esc) ").clicked() {
+                        do_close = true;
+                    }
+                });
+            });
+
+            ui.add_space(12.0);
+            ui.label(RichText::new("请输入新工程名称:").color(Theme::TEXT_PRIMARY));
+            let text_resp = ui.add(
+                egui::TextEdit::singleline(&mut state.new_project_input)
+                    .hint_text("例如: My Awesome Video 2026")
+                    .desired_width(ui.available_width()),
+            );
+            text_resp.request_focus();
+
+            ui.add_space(16.0);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("按 Enter 确认创建 | Esc 取消").size(11.0).color(Theme::TEXT_MUTED));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button(RichText::new(" 确认创建 (Enter) ").color(Theme::ACCENT_CYAN).strong()).clicked() {
+                        do_create = true;
+                    }
+                });
+            });
+        });
+    });
+
+    if do_create {
+        let title = state.new_project_input.clone();
+        state.create_new_project(&title);
+        state.show_new_project_modal = false;
+    }
+
+    if do_close {
+        state.show_new_project_modal = false;
+    }
+}
+
+/// 绘制重命名项目交互弹窗
+fn draw_rename_project_modal(ui: &mut Ui, state: &mut NavigationState) {
+    let full_rect = ui.max_rect();
+    let modal_w = 460.0;
+    let modal_h = 200.0;
+    let modal_rect = Rect::from_center_size(full_rect.center(), vec2(modal_w, modal_h));
+
+    ui.painter().rect_filled(full_rect, 0.0, Color32::from_black_alpha(160));
+    ui.painter().rect_filled(modal_rect, CornerRadius::same(10), Theme::BG_PANEL_ALT);
+    ui.painter().rect_stroke(
+        modal_rect,
+        CornerRadius::same(10),
+        Stroke::new(1.5, Theme::ACCENT_ORANGE),
+        egui::StrokeKind::Inside,
+    );
+
+    let mut do_rename = false;
+    let mut do_close = false;
+
+    ui.scope_builder(UiBuilder::new().max_rect(modal_rect.shrink(20.0)), |ui| {
+        ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("✏ 重命名工程").size(16.0).strong().color(Theme::ACCENT_ORANGE));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button(" ✕ (Esc) ").clicked() {
+                        do_close = true;
+                    }
+                });
+            });
+
+            ui.add_space(12.0);
+            ui.label(RichText::new("请输入新的工程名称:").color(Theme::TEXT_PRIMARY));
+            let text_resp = ui.add(
+                egui::TextEdit::singleline(&mut state.rename_project_input)
+                    .desired_width(ui.available_width()),
+            );
+            text_resp.request_focus();
+
+            ui.add_space(16.0);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("按 Enter 确认重命名 | Esc 取消").size(11.0).color(Theme::TEXT_MUTED));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button(RichText::new(" 确认重命名 (Enter) ").color(Theme::ACCENT_ORANGE).strong()).clicked() {
+                        do_rename = true;
+                    }
+                });
+            });
+        });
+    });
+
+    if do_rename {
+        let new_title = state.rename_project_input.clone();
+        state.rename_selected_project(&new_title);
+        state.show_rename_project_modal = false;
+    }
+
+    if do_close {
+        state.show_rename_project_modal = false;
+    }
 }
 
 #[cfg(test)]
@@ -707,5 +915,27 @@ mod tests {
         // 恢复项目
         state.paste_project();
         assert_eq!(state.projects.len(), initial_count);
+    }
+
+    #[test]
+    fn test_navigation_create_rename_clone() {
+        let mut state = NavigationState::default();
+        let initial_count = state.projects.len();
+
+        // 1. 测试新建工程
+        let new_p = state.create_new_project("New Awesome vlog");
+        assert_eq!(state.projects.len(), initial_count + 1);
+        assert_eq!(state.projects[0].title, "New Awesome vlog");
+        assert_eq!(new_p.title, "New Awesome vlog");
+
+        // 2. 测试重命名
+        state.selected_index = 1;
+        state.rename_selected_project("Renamed vlog 2026");
+        assert_eq!(state.projects[0].title, "Renamed vlog 2026");
+
+        // 3. 测试克隆副本
+        let cloned = state.clone_selected_project().unwrap();
+        assert_eq!(cloned.title, "Renamed vlog 2026 (副本)");
+        assert_eq!(state.projects.len(), initial_count + 2);
     }
 }

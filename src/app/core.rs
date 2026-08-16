@@ -477,7 +477,25 @@ impl eframe::App for VideoCutApp {
                 // 分页面处理按键
                 match self.current_page {
                     Page::Navigation => {
-                        if !self.nav_state.is_search_active {
+                        if self.nav_state.show_new_project_modal {
+                            if i.key_pressed(egui::Key::Escape) {
+                                self.nav_state.show_new_project_modal = false;
+                            } else if i.key_pressed(egui::Key::Enter) {
+                                let title = self.nav_state.new_project_input.clone();
+                                let card = self.nav_state.create_new_project(&title);
+                                self.nav_state.show_new_project_modal = false;
+                                self.project_state = ProjectState::new(&card.title);
+                                self.navigate_to_page(Page::MainInterface);
+                            }
+                        } else if self.nav_state.show_rename_project_modal {
+                            if i.key_pressed(egui::Key::Escape) {
+                                self.nav_state.show_rename_project_modal = false;
+                            } else if i.key_pressed(egui::Key::Enter) {
+                                let new_title = self.nav_state.rename_project_input.clone();
+                                self.nav_state.rename_selected_project(&new_title);
+                                self.nav_state.show_rename_project_modal = false;
+                            }
+                        } else if !self.nav_state.is_search_active && !self.nav_state.is_quick_jump_active {
                             if i.key_pressed(egui::Key::H) || i.key_pressed(egui::Key::ArrowLeft) {
                                 self.nav_state.move_left();
                             }
@@ -511,6 +529,25 @@ impl eframe::App for VideoCutApp {
                             }
                             if i.key_pressed(egui::Key::Slash) || typed_texts.iter().any(|t| t == "／" || t == "/") {
                                 self.nav_state.is_search_active = true;
+                            }
+                            if !i.modifiers.shift && i.key_pressed(egui::Key::N) {
+                                self.nav_state.show_new_project_modal = true;
+                                self.nav_state.new_project_input.clear();
+                            }
+                            if !i.modifiers.shift
+                                && i.key_pressed(egui::Key::R)
+                                && self.nav_state.selected_index > 0
+                            {
+                                let filtered = self.nav_state.filtered_indices();
+                                if let Some(&proj_idx) = filtered.get(self.nav_state.selected_index - 1) {
+                                    if let Some(proj) = self.nav_state.projects.get(proj_idx) {
+                                        self.nav_state.rename_project_input = proj.title.clone();
+                                        self.nav_state.show_rename_project_modal = true;
+                                    }
+                                }
+                            }
+                            if i.modifiers.shift && i.key_pressed(egui::Key::C) {
+                                self.nav_state.clone_selected_project();
                             }
                             if i.modifiers.shift && i.key_pressed(egui::Key::D) {
                                 self.nav_state.delete_selected();

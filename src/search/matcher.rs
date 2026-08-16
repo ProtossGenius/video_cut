@@ -10,6 +10,19 @@ pub struct MatchResult {
 pub struct PinyinFuzzyMatcher;
 
 impl PinyinFuzzyMatcher {
+    /// 将文本转为拼音字符串
+    pub fn to_pinyin_string(text: &str) -> String {
+        let mut result = String::new();
+        for c in text.chars() {
+            if let Some(p) = c.to_pinyin() {
+                result.push_str(p.plain());
+            } else {
+                result.push(c.to_ascii_lowercase());
+            }
+        }
+        result
+    }
+
     /// 针对单个候选字符串进行拼音 + 模糊匹配
     /// 返回匹配得分与高亮索引。如果未匹配则返回 None
     pub fn match_query(target: &str, query: &str) -> Option<MatchResult> {
