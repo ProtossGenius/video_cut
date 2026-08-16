@@ -274,6 +274,8 @@ impl EditorCommand for MergeClipsCommand {
             text_overlay: None,
             easing_curve: crate::effects::EasingCurve::default(),
             keyframe_track: None,
+            color_tag: crate::timeline::ColorTagPreset::None,
+            group_id: None,
         };
 
         track.clips.retain(|c| !self.clip_ids.contains(&c.id));
@@ -404,6 +406,8 @@ impl EditorCommand for MergeCutCommand {
             text_overlay: None,
             easing_curve: crate::effects::EasingCurve::default(),
             keyframe_track: None,
+            color_tag: crate::timeline::ColorTagPreset::None,
+            group_id: None,
         };
 
         remaining_clips.push(new_cut_clip);

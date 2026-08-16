@@ -51,6 +51,62 @@ impl std::fmt::Display for FrameTime {
     }
 }
 
+/// 切片与轨道色彩标签预设
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+pub enum ColorTagPreset {
+    #[default]
+    None,
+    Rose,
+    Orange,
+    Amber,
+    Emerald,
+    Cyan,
+    Blue,
+    Purple,
+}
+
+impl ColorTagPreset {
+    pub fn from_str_loose(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "none" | "default" | "无" | "默认" => Some(ColorTagPreset::None),
+            "rose" | "red" | "玫红" | "红" => Some(ColorTagPreset::Rose),
+            "orange" | "橙" | "橙色" => Some(ColorTagPreset::Orange),
+            "amber" | "yellow" | "金" | "琥珀" | "黄" => Some(ColorTagPreset::Amber),
+            "emerald" | "green" | "绿" | "翡翠" => Some(ColorTagPreset::Emerald),
+            "cyan" | "青" | "青色" => Some(ColorTagPreset::Cyan),
+            "blue" | "蓝" | "蓝色" => Some(ColorTagPreset::Blue),
+            "purple" | "violet" | "紫" | "紫色" => Some(ColorTagPreset::Purple),
+            _ => None,
+        }
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            ColorTagPreset::None => "默认 (None)",
+            ColorTagPreset::Rose => "玫红 (Rose)",
+            ColorTagPreset::Orange => "橙色 (Orange)",
+            ColorTagPreset::Amber => "琥珀金 (Amber)",
+            ColorTagPreset::Emerald => "翡翠绿 (Emerald)",
+            ColorTagPreset::Cyan => "青蓝 (Cyan)",
+            ColorTagPreset::Blue => "天蓝 (Blue)",
+            ColorTagPreset::Purple => "紫罗兰 (Purple)",
+        }
+    }
+
+    pub fn to_rgb(&self) -> Option<(u8, u8, u8)> {
+        match self {
+            ColorTagPreset::None => None,
+            ColorTagPreset::Rose => Some((225, 29, 72)),
+            ColorTagPreset::Orange => Some((234, 88, 12)),
+            ColorTagPreset::Amber => Some((217, 119, 6)),
+            ColorTagPreset::Emerald => Some((5, 150, 105)),
+            ColorTagPreset::Cyan => Some((8, 145, 178)),
+            ColorTagPreset::Blue => Some((37, 99, 235)),
+            ColorTagPreset::Purple => Some((124, 58, 237)),
+        }
+    }
+}
+
 /// 切片数据结构
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Clip {
@@ -99,6 +155,10 @@ pub struct Clip {
     pub easing_curve: crate::effects::EasingCurve,
     /// 自动化属性关键帧包络轨道 (Automation Keyframe Track)
     pub keyframe_track: Option<crate::effects::ClipKeyframeTrack>,
+    /// 色彩标签 (Color Tag)
+    pub color_tag: ColorTagPreset,
+    /// 多切片联动编组 ID (Group ID)
+    pub group_id: Option<u64>,
 }
 
 impl Clip {
@@ -132,6 +192,8 @@ impl Clip {
             text_overlay: None,
             easing_curve: crate::effects::EasingCurve::default(),
             keyframe_track: None,
+            color_tag: ColorTagPreset::None,
+            group_id: None,
         }
     }
 

@@ -28,6 +28,8 @@ pub struct Track {
     pub is_muted: bool,
     /// 是否独奏
     pub is_solo: bool,
+    /// 轨道色彩标签 (Color Tag)
+    pub color_tag: super::clip::ColorTagPreset,
 }
 
 impl Track {
@@ -42,6 +44,7 @@ impl Track {
             pan: 0.0,
             is_muted: false,
             is_solo: false,
+            color_tag: super::clip::ColorTagPreset::None,
         }
     }
 

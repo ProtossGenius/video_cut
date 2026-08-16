@@ -219,6 +219,8 @@ impl CutWorkflowEngine {
                                 text_overlay: None,
                                 easing_curve: crate::effects::EasingCurve::default(),
                                 keyframe_track: None,
+                                color_tag: crate::timeline::ColorTagPreset::None,
+                                group_id: None,
                             };
                             track.clips.retain(|c| !clip_ids.contains(&c.id.0));
                             track.add_clip(merged_clip);

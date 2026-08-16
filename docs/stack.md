@@ -90,3 +90,4 @@
 73. [x] **完成任务**：实装轨道音量推子与立体声声相平衡控制 (`:track_vol`/`:pan`, Constant Power Panning)
 74. [x] **完成任务**：实装自动化关键帧属性包络线 (`:keyframe`/`:clearkf`, ClipKeyframeTrack & Visualizer)
 75. [x] **完成任务**：实装音频波形节奏与能量瞬态吸附引擎 (`:beatsnap`, AudioTransientDetector & SnapTargetKind)
+76. [x] **完成任务**：实装轨道色彩标签与切片多选编组管道 (`:group`/`:ungroup`/`:color`, ColorTagPreset)

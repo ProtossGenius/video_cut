@@ -255,6 +255,34 @@ pub fn get_all_command_help_items() -> Vec<CommandHelpItem> {
             category: "特效控制",
         },
         CommandHelpItem {
+            name: ":color",
+            alias: ":tag",
+            args: "<rose|orange|amber|emerald|cyan|blue|purple|none>",
+            description: "为当前切片赋予色彩分类标签高亮显示",
+            category: "切片操作",
+        },
+        CommandHelpItem {
+            name: ":track_color",
+            alias: ":tcolor",
+            args: "<rose|orange|amber|emerald|cyan|blue|purple|none>",
+            description: "为当前轨道赋予色彩标签分类",
+            category: "切片操作",
+        },
+        CommandHelpItem {
+            name: ":group",
+            alias: ":g",
+            args: "",
+            description: "将当前切片或多选切片编组成联动组",
+            category: "切片操作",
+        },
+        CommandHelpItem {
+            name: ":ungroup",
+            alias: ":ug",
+            args: "",
+            description: "解除当前切片或选区切片的编组关系",
+            category: "切片操作",
+        },
+        CommandHelpItem {
             name: ":detach_audio",
             alias: ":split_av",
             args: "",
@@ -1909,6 +1937,59 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                                         ui.close();
                                     }
                                 });
+                                ui.menu_button("🎨 标记色彩标签", |ui| {
+                                    if ui.button("玫红 (Rose)").clicked() {
+                                        state.command_input = ":color rose".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("橙色 (Orange)").clicked() {
+                                        state.command_input = ":color orange".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("琥珀金 (Amber)").clicked() {
+                                        state.command_input = ":color amber".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("翡翠绿 (Emerald)").clicked() {
+                                        state.command_input = ":color emerald".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("青蓝 (Cyan)").clicked() {
+                                        state.command_input = ":color cyan".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("天蓝 (Blue)").clicked() {
+                                        state.command_input = ":color blue".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("紫罗兰 (Purple)").clicked() {
+                                        state.command_input = ":color purple".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    ui.separator();
+                                    if ui.button("清除色彩标签 (None)").clicked() {
+                                        state.command_input = ":color none".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                });
+                                let group_label = if clip.group_id.is_some() {
+                                    "🔗 解除编组 (:ungroup)"
+                                } else {
+                                    "🔗 编组切片 (:group)"
+                                };
+                                if ui.button(group_label).clicked() {
+                                    state.command_input = if clip.group_id.is_some() { ":ungroup".into() } else { ":group".into() };
+                                    state.is_command_mode = true;
+                                    ui.close();
+                                }
                                 if ui.button("🔊 音画分离至新音频轨 (:detach_audio)").clicked() {
                                     state.command_input = ":detach_audio".into();
                                     state.is_command_mode = true;
@@ -2303,6 +2384,11 @@ fn draw_clip_card(
 
     let (fill_color, border_color) = if is_vline_selected {
         (Color32::from_rgb(55, 30, 85), Theme::ACCENT_PURPLE)
+    } else if let Some((r, g, b)) = clip.color_tag.to_rgb() {
+        (
+            Color32::from_rgb((r as f32 * 0.40) as u8, (g as f32 * 0.40) as u8, (b as f32 * 0.40) as u8),
+            Color32::from_rgb(r, g, b),
+        )
     } else if track_idx == 0 {
         (Theme::TRACK_V1, Theme::TRACK_V1_BORDER)
     } else if track_idx == 1 {
@@ -2509,6 +2595,22 @@ fn draw_clip_card(
                 painter.circle_stroke(pos2(px, py), 3.5, Stroke::new(1.0, Color32::BLACK));
             }
         }
+    }
+
+    // 如果切片属于编组，绘制编组角标
+    if let Some(gid) = clip.group_id {
+        let badge_rect = Rect::from_min_size(
+            pos2(clip_rect.max.x - 36.0, clip_rect.min.y + 3.0),
+            vec2(32.0, 13.0),
+        );
+        painter.rect_filled(badge_rect, CornerRadius::same(2), Color32::from_rgba_unmultiplied(30, 140, 255, 180));
+        painter.text(
+            badge_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            format!("🔗G{}", gid),
+            egui::FontId::monospace(8.5),
+            Color32::WHITE,
+        );
     }
 }
 

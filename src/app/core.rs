@@ -798,6 +798,86 @@ impl VideoCutApp {
                     self.main_ui_state.status_message = Some(format!("未知画中画/分屏预设: {}", preset_str));
                 }
             }
+            "color" | "tag" => {
+                let tag_str = parts.get(1).copied().unwrap_or("rose");
+                if let Some(tag) = crate::timeline::ColorTagPreset::from_str_loose(tag_str) {
+                    let track_idx = self.main_ui_state.selected_track_idx;
+                    if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                        let playhead = FrameTime(self.main_ui_state.playhead_us);
+                        if let Some(clip) = track.clips.iter_mut().find(|c| {
+                            playhead >= c.timeline_start && playhead <= c.timeline_end()
+                        }) {
+                            clip.color_tag = tag;
+                            self.main_ui_state.status_message = Some(format!("切片 '{}' 色彩标签已设置为: {}", clip.name, tag.name()));
+                        }
+                    }
+                }
+            }
+            "track_color" | "tcolor" => {
+                let tag_str = parts.get(1).copied().unwrap_or("rose");
+                if let Some(tag) = crate::timeline::ColorTagPreset::from_str_loose(tag_str) {
+                    let track_idx = self.main_ui_state.selected_track_idx;
+                    if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                        track.color_tag = tag;
+                        self.main_ui_state.status_message = Some(format!("轨道 '{}' 色彩标签已设置为: {}", track.name, tag.name()));
+                    }
+                }
+            }
+            "group" | "g" => {
+                let new_gid = (self.project_state.timeline.tracks.iter().flat_map(|t| &t.clips).filter_map(|c| c.group_id).max().unwrap_or(0)) + 1;
+                let mut count = 0;
+                if self.main_ui_state.current_mode == Mode::VisualLine && !self.main_ui_state.visual_line_selected_clips.is_empty() {
+                    let selected = self.main_ui_state.visual_line_selected_clips.clone();
+                    for track in &mut self.project_state.timeline.tracks {
+                        for clip in &mut track.clips {
+                            if selected.contains(&clip.id) {
+                                clip.group_id = Some(new_gid);
+                                count += 1;
+                            }
+                        }
+                    }
+                } else {
+                    let track_idx = self.main_ui_state.selected_track_idx;
+                    if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                        let playhead = FrameTime(self.main_ui_state.playhead_us);
+                        if let Some(clip) = track.clips.iter_mut().find(|c| {
+                            playhead >= c.timeline_start && playhead <= c.timeline_end()
+                        }) {
+                            clip.group_id = Some(new_gid);
+                            count = 1;
+                        }
+                    }
+                }
+                self.main_ui_state.status_message = Some(format!("已将 {} 个切片编组至 Group #{}", count, new_gid));
+            }
+            "ungroup" | "ug" => {
+                let mut count = 0;
+                if self.main_ui_state.current_mode == Mode::VisualLine && !self.main_ui_state.visual_line_selected_clips.is_empty() {
+                    let selected = self.main_ui_state.visual_line_selected_clips.clone();
+                    for track in &mut self.project_state.timeline.tracks {
+                        for clip in &mut track.clips {
+                            if selected.contains(&clip.id) && clip.group_id.is_some() {
+                                clip.group_id = None;
+                                count += 1;
+                            }
+                        }
+                    }
+                } else {
+                    let track_idx = self.main_ui_state.selected_track_idx;
+                    if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                        let playhead = FrameTime(self.main_ui_state.playhead_us);
+                        if let Some(clip) = track.clips.iter_mut().find(|c| {
+                            playhead >= c.timeline_start && playhead <= c.timeline_end()
+                        }) {
+                            if clip.group_id.is_some() {
+                                clip.group_id = None;
+                                count = 1;
+                            }
+                        }
+                    }
+                }
+                self.main_ui_state.status_message = Some(format!("已解除 {} 个切片的编组", count));
+            }
             "detach_audio" | "detachaudio" | "split_av" | "splitav" => {
                 let track_idx = self.main_ui_state.selected_track_idx;
                 let track_id_opt = self.project_state.timeline.tracks.get(track_idx).map(|t| t.id);
@@ -2585,5 +2665,32 @@ mod tests {
         // 3. 切换节拍吸附 :beatsnap
         app.execute_command_line(":beatsnap");
         assert!(app.main_ui_state.beat_snap_enabled);
+    }
+
+    #[test]
+    fn test_color_and_group_commands() {
+        let mut app = VideoCutApp::new_for_test();
+        let track = app.project_state.timeline.tracks.first_mut().unwrap();
+        track.clips.clear();
+        let clip = crate::timeline::Clip::new(crate::timeline::ClipId(1), "vlog.mp4".into(), crate::timeline::AssetId(1), FrameTime(0), FrameTime(10_000_000));
+        track.add_clip(clip);
+
+        app.main_ui_state.playhead_us = 2_000_000;
+
+        // 1. 设置色彩标签 :color emerald
+        app.execute_command_line(":color emerald");
+        assert_eq!(app.project_state.timeline.tracks[0].clips[0].color_tag, crate::timeline::ColorTagPreset::Emerald);
+
+        // 2. 设置轨道色彩标签 :track_color purple
+        app.execute_command_line(":track_color purple");
+        assert_eq!(app.project_state.timeline.tracks[0].color_tag, crate::timeline::ColorTagPreset::Purple);
+
+        // 3. 切片编组 :group
+        app.execute_command_line(":group");
+        assert_eq!(app.project_state.timeline.tracks[0].clips[0].group_id, Some(1));
+
+        // 4. 解除编组 :ungroup
+        app.execute_command_line(":ungroup");
+        assert!(app.project_state.timeline.tracks[0].clips[0].group_id.is_none());
     }
 }
