@@ -290,13 +290,11 @@ impl VideoCutApp {
                 self.main_ui_state.show_message_window = true;
             }
             "history" => {
-                self.main_ui_state.history_output = self
-                    .main_ui_state
-                    .command_history_list
-                    .iter()
-                    .map(|c| format!(":{}", c))
-                    .collect();
-                self.main_ui_state.show_message_window = true;
+                self.main_ui_state.show_history_modal = true;
+                self.main_ui_state.history_search.clear();
+                self.main_ui_state.history_selected_idx = 0;
+                self.main_ui_state.status_message =
+                    Some("已开启历史命令面板 (:history)".into());
             }
             "help" | "h" => {
                 self.main_ui_state.show_command_help_modal = true;
@@ -592,6 +590,41 @@ impl eframe::App for VideoCutApp {
                                 self.main_ui_state.show_marks_manager_modal = false;
                             } else if i.key_pressed(egui::Key::Slash) || typed_texts.iter().any(|t| t == "／" || t == "/") {
                                 self.main_ui_state.marks_manager_search_active = true;
+                            }
+                        }
+                        // 0.2 如果处于历史命令记录弹窗 (:history)
+                        else if self.main_ui_state.show_history_modal {
+                            if i.key_pressed(egui::Key::Escape) {
+                                self.main_ui_state.show_history_modal = false;
+                            } else if i.key_pressed(egui::Key::Slash) || typed_texts.iter().any(|t| t == "／" || t == "/") {
+                                self.main_ui_state.history_search_active = true;
+                            } else if i.key_pressed(egui::Key::J) || i.key_pressed(egui::Key::ArrowDown) {
+                                let total = self.main_ui_state.command_history_list.len();
+                                if self.main_ui_state.history_selected_idx + 1 < total {
+                                    self.main_ui_state.history_selected_idx += 1;
+                                }
+                            } else if i.key_pressed(egui::Key::K) || i.key_pressed(egui::Key::ArrowUp) {
+                                if self.main_ui_state.history_selected_idx > 0 {
+                                    self.main_ui_state.history_selected_idx -= 1;
+                                }
+                            } else if i.key_pressed(egui::Key::Enter) {
+                                let query = self.main_ui_state.history_search.trim().to_lowercase();
+                                let filtered: Vec<&String> = self
+                                    .main_ui_state
+                                    .command_history_list
+                                    .iter()
+                                    .filter(|cmd| query.is_empty() || cmd.to_lowercase().contains(&query))
+                                    .collect();
+                                if let Some(cmd) = filtered.get(self.main_ui_state.history_selected_idx) {
+                                    let formatted = if cmd.starts_with(':') {
+                                        cmd.to_string()
+                                    } else {
+                                        format!(":{}", cmd)
+                                    };
+                                    self.main_ui_state.command_input = formatted;
+                                    self.main_ui_state.is_command_mode = true;
+                                    self.main_ui_state.show_history_modal = false;
+                                }
                             }
                         }
                         // 1. 如果处于锚点标记会话 (AnchorMarkSession - m/M)

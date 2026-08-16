@@ -181,6 +181,10 @@ pub struct MainInterfaceUiState {
     pub marks_manager_search: String,
     pub marks_manager_selected_idx: usize,
     pub marks_manager_search_active: bool,
+    pub show_history_modal: bool, // :history 弹出的交互式历史命令弹窗
+    pub history_search: String,
+    pub history_selected_idx: usize,
+    pub history_search_active: bool,
     pub command_input: String,
     pub is_command_mode: bool,
     pub media_search: String,
@@ -214,6 +218,10 @@ impl Default for MainInterfaceUiState {
             marks_manager_search: String::new(),
             marks_manager_selected_idx: 0,
             marks_manager_search_active: false,
+            show_history_modal: false,
+            history_search: String::new(),
+            history_selected_idx: 0,
+            history_search_active: false,
             command_input: String::new(),
             is_command_mode: false,
             media_search: String::new(),
@@ -1275,6 +1283,11 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
     if state.show_marks_manager_modal {
         draw_marks_manager_modal(ui, project, state);
     }
+
+    // 10. 浮动独立历史命令记录面板 (History Modal - :history 唤出)
+    if state.show_history_modal {
+        draw_history_modal(ui, state);
+    }
 }
 
 /// 绘制单个剪辑卡片
@@ -2303,6 +2316,214 @@ fn draw_marks_manager_modal(
 
     if close_modal {
         state.show_marks_manager_modal = false;
+    }
+}
+
+/// 绘制独立交互式历史命令记录弹窗 (:history)
+fn draw_history_modal(ui: &mut Ui, state: &mut MainInterfaceUiState) {
+    let full_rect = ui.max_rect();
+    let modal_w = 720.0;
+    let modal_h = 480.0;
+    let modal_rect = Rect::from_center_size(full_rect.center(), vec2(modal_w, modal_h));
+
+    // 1. 半透明暗色遮罩
+    ui.painter().rect_filled(full_rect, 0.0, Color32::from_black_alpha(160));
+
+    // 2. 面板背景与发光琥珀橙色边框
+    ui.painter().rect_filled(modal_rect, CornerRadius::same(10), Theme::BG_PANEL_ALT);
+    ui.painter().rect_stroke(
+        modal_rect,
+        CornerRadius::same(10),
+        Stroke::new(1.5, Theme::ACCENT_ORANGE),
+        egui::StrokeKind::Inside,
+    );
+
+    let mut fill_command = None;
+    let mut close_modal = false;
+
+    let query = state.history_search.trim().to_lowercase();
+    let filtered_history: Vec<(usize, &String)> = state
+        .command_history_list
+        .iter()
+        .enumerate()
+        .filter(|(_, cmd)| {
+            if query.is_empty() {
+                true
+            } else {
+                cmd.to_lowercase().contains(&query)
+            }
+        })
+        .collect();
+
+    ui.scope_builder(UiBuilder::new().max_rect(modal_rect.shrink(18.0)), |ui| {
+        ui.vertical(|ui| {
+            // 顶栏：标题与关闭按钮
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new("📜 VideoCut 历史命令记录 (:history)")
+                        .size(16.0)
+                        .strong()
+                        .color(Theme::ACCENT_ORANGE),
+                );
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new(format!("(共 {} 条历史记录)", filtered_history.len()))
+                        .size(12.0)
+                        .color(Theme::TEXT_MUTED),
+                );
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button(RichText::new(" ✕ 关闭 (Esc) ").size(12.0)).clicked() {
+                        close_modal = true;
+                    }
+                });
+            });
+
+            ui.add_space(8.0);
+
+            // 搜索栏
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("🔍 筛选:").color(Theme::ACCENT_ORANGE).strong());
+                let search_resp = ui.add(
+                    egui::TextEdit::singleline(&mut state.history_search)
+                        .hint_text("输入命令关键词筛选 (按 / 聚焦，按 Esc 退出)...")
+                        .desired_width(ui.available_width() - 80.0),
+                );
+                if state.history_search_active {
+                    search_resp.request_focus();
+                    state.history_search_active = false;
+                }
+                if !state.history_search.is_empty() && ui.button("✕ 清空").clicked() {
+                    state.history_search.clear();
+                }
+            });
+
+            ui.add_space(4.0);
+            ui.label(
+                RichText::new("💡 快捷提示: 点击或按 Enter 填入命令进入编辑 | j/k 上下选择 | 按 / 搜索 | Esc 关闭")
+                    .size(11.0)
+                    .color(Theme::TEXT_MUTED),
+            );
+            ui.separator();
+            ui.add_space(4.0);
+
+            // 表头
+            ui.horizontal(|ui| {
+                ui.add_space(10.0);
+                ui.label(RichText::new("序号").strong().size(12.0).color(Theme::TEXT_MUTED));
+                ui.add_space(30.0);
+                ui.label(RichText::new("执行命令 (Command Line)").strong().size(12.0).color(Theme::ACCENT_ORANGE));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.add_space(20.0);
+                    ui.label(RichText::new("操作").strong().size(12.0).color(Theme::TEXT_MUTED));
+                });
+            });
+            ui.separator();
+
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    if filtered_history.is_empty() {
+                        ui.add_space(40.0);
+                        ui.vertical_centered(|ui| {
+                            ui.label(
+                                RichText::new("暂无历史命令记录")
+                                    .size(14.0)
+                                    .color(Theme::TEXT_MUTED),
+                            );
+                        });
+                    } else {
+                        for (filter_idx, (orig_idx, cmd)) in filtered_history.iter().enumerate() {
+                            let is_selected = filter_idx == state.history_selected_idx;
+                            let row_bg = if is_selected {
+                                Color32::from_rgb(50, 38, 25)
+                            } else if filter_idx % 2 == 0 {
+                                Color32::from_rgb(22, 25, 32)
+                            } else {
+                                Color32::from_rgb(26, 30, 40)
+                            };
+
+                            let (rect, resp) = ui.allocate_exact_size(
+                                vec2(ui.available_width(), 32.0),
+                                egui::Sense::click(),
+                            );
+
+                            if resp.hovered() {
+                                ui.painter().rect_filled(rect, CornerRadius::same(4), Color32::from_rgb(60, 48, 30));
+                            } else {
+                                ui.painter().rect_filled(rect, CornerRadius::same(4), row_bg);
+                            }
+
+                            if is_selected {
+                                ui.painter().rect_stroke(
+                                    rect,
+                                    CornerRadius::same(4),
+                                    Stroke::new(1.5, Theme::ACCENT_ORANGE),
+                                    egui::StrokeKind::Inside,
+                                );
+                            }
+
+                            let y_center = rect.center().y;
+
+                            // 序号
+                            ui.painter().text(
+                                pos2(rect.min.x + 10.0, y_center),
+                                egui::Align2::LEFT_CENTER,
+                                format!("#{}", orig_idx + 1),
+                                egui::FontId::monospace(11.0),
+                                Theme::TEXT_MUTED,
+                            );
+
+                            // 命令行
+                            let formatted_cmd = if cmd.starts_with(':') {
+                                cmd.to_string()
+                            } else {
+                                format!(":{}", cmd)
+                            };
+
+                            ui.painter().text(
+                                pos2(rect.min.x + 60.0, y_center),
+                                egui::Align2::LEFT_CENTER,
+                                &formatted_cmd,
+                                egui::FontId::monospace(13.0),
+                                Theme::TEXT_PRIMARY,
+                            );
+
+                            // 复用按钮
+                            let btn_rect = Rect::from_center_size(
+                                pos2(rect.max.x - 50.0, y_center),
+                                vec2(60.0, 20.0),
+                            );
+                            ui.painter().rect_filled(
+                                btn_rect,
+                                CornerRadius::same(3),
+                                Color32::from_rgb(45, 35, 20),
+                            );
+                            ui.painter().text(
+                                btn_rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                "复用 ↵",
+                                egui::FontId::proportional(11.0),
+                                Theme::ACCENT_ORANGE,
+                            );
+
+                            if resp.clicked() {
+                                fill_command = Some(formatted_cmd);
+                            }
+                        }
+                    }
+                });
+        });
+    });
+
+    if let Some(cmd) = fill_command {
+        state.command_input = cmd;
+        state.is_command_mode = true;
+        close_modal = true;
+    }
+
+    if close_modal {
+        state.show_history_modal = false;
     }
 }
 
