@@ -1068,6 +1068,34 @@ impl VideoCutApp {
                         Some(format!("工程文件已安全保存落盘 ({})", target_file));
                 }
             }
+            "pack_project" | "pack" | "bundle" | "archive" => {
+                let bundle_name = if parts.len() > 1 { parts[1] } else { "project.vcutpkg" };
+                let bundle_path = PathBuf::from(bundle_name);
+                match crate::project::ProjectBundle::pack_bundle(&bundle_path, &self.project_state, &[], &[]) {
+                    Ok(manifest) => {
+                        self.main_ui_state.status_message = Some(format!("项目已成功打包归档至: {} (共包含 {} 个资产)", bundle_name, manifest.media_assets.len()));
+                    }
+                    Err(e) => {
+                        self.main_ui_state.status_message = Some(format!("打包项目归档失败: {}", e));
+                    }
+                }
+            }
+            "unpack_project" | "unpack" | "open_bundle" | "load_bundle" => {
+                if parts.len() > 1 {
+                    let bundle_path = PathBuf::from(parts[1]);
+                    match crate::project::ProjectBundle::unpack_bundle(&bundle_path) {
+                        Ok(state) => {
+                            self.project_state = state;
+                            self.main_ui_state.status_message = Some(format!("成功从归档包载入项目: {}", self.project_state.name));
+                        }
+                        Err(e) => {
+                            self.main_ui_state.status_message = Some(format!("解包载入项目失败: {}", e));
+                        }
+                    }
+                } else {
+                    self.main_ui_state.status_message = Some("请指定要解包的项目归档路径，例如: :unpack my_project.vcutpkg".into());
+                }
+            }
             "q" | "quit" => {
                 self.navigate_to_page(Page::Navigation);
             }
@@ -2827,5 +2855,23 @@ mod tests {
         // 4. 取消队列 :cancel_export
         app.execute_command_line(":cancel_export");
         assert!(app.main_ui_state.status_message.as_ref().unwrap().contains("已取消"));
+    }
+
+    #[test]
+    fn test_pack_and_unpack_commands() {
+        let mut app = VideoCutApp::new_for_test();
+        let tmp_dir = std::env::temp_dir().join(format!("app_bundle_{}", std::process::id()));
+        let bundle_path = tmp_dir.join("test_proj.vcutpkg");
+
+        // 1. 打包工程 :pack_project
+        app.execute_command_line(&format!(":pack_project {}", bundle_path.display()));
+        assert!(app.main_ui_state.status_message.as_ref().unwrap().contains("项目已成功打包归档至"));
+        assert!(bundle_path.join("manifest.json").exists());
+
+        // 2. 解包工程 :unpack_project
+        app.execute_command_line(&format!(":unpack_project {}", bundle_path.display()));
+        assert!(app.main_ui_state.status_message.as_ref().unwrap().contains("成功从归档包载入项目"));
+
+        let _ = std::fs::remove_dir_all(tmp_dir);
     }
 }

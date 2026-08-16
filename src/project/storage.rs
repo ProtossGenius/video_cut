@@ -196,6 +196,100 @@ impl WalLog {
     }
 }
 
+/// 自包含工程归档包清单元数据
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProjectBundleManifest {
+    pub project_name: String,
+    pub version: u32,
+    pub created_at_ms: u64,
+    pub media_assets: Vec<String>,
+    pub scripts: Vec<String>,
+}
+
+/// 自包含工程打包与解包归档器
+pub struct ProjectBundle;
+
+impl ProjectBundle {
+    /// 将工程和引用的外部素材统一打包为自包含目录
+    pub fn pack_bundle(
+        bundle_dir: &Path,
+        state: &ProjectState,
+        asset_paths: &[PathBuf],
+        script_paths: &[PathBuf],
+    ) -> Result<ProjectBundleManifest> {
+        if !bundle_dir.exists() {
+            fs::create_dir_all(bundle_dir)
+                .with_context(|| format!("Failed to create bundle dir: {:?}", bundle_dir))?;
+        }
+
+        let assets_dir = bundle_dir.join("assets");
+        fs::create_dir_all(&assets_dir)?;
+
+        let scripts_dir = bundle_dir.join("scripts");
+        fs::create_dir_all(&scripts_dir)?;
+
+        let mut copied_assets = Vec::new();
+        for src in asset_paths {
+            if src.exists() && src.is_file() {
+                if let Some(file_name) = src.file_name() {
+                    let dest = assets_dir.join(file_name);
+                    fs::copy(src, &dest)?;
+                    copied_assets.push(file_name.to_string_lossy().to_string());
+                }
+            }
+        }
+
+        let mut copied_scripts = Vec::new();
+        for src in script_paths {
+            if src.exists() && src.is_file() {
+                if let Some(file_name) = src.file_name() {
+                    let dest = scripts_dir.join(file_name);
+                    fs::copy(src, &dest)?;
+                    copied_scripts.push(file_name.to_string_lossy().to_string());
+                }
+            }
+        }
+
+        // 写入核心工程文件 project.vcut
+        let proj_file = bundle_dir.join("project.vcut");
+        ProjectStorage::save_project_atomic(&proj_file, state)?;
+
+        // 写入 manifest.json
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+
+        let manifest = ProjectBundleManifest {
+            project_name: state.name.clone(),
+            version: 1,
+            created_at_ms: now_ms,
+            media_assets: copied_assets,
+            scripts: copied_scripts,
+        };
+
+        let manifest_json = serde_json::to_string_pretty(&manifest)?;
+        fs::write(bundle_dir.join("manifest.json"), manifest_json)?;
+
+        Ok(manifest)
+    }
+
+    /// 从自包含归档包目录解包并载入 ProjectState
+    pub fn unpack_bundle(bundle_dir: &Path) -> Result<ProjectState> {
+        let manifest_file = bundle_dir.join("manifest.json");
+        if !manifest_file.exists() {
+            anyhow::bail!("Invalid project bundle: missing manifest.json");
+        }
+
+        let proj_file = bundle_dir.join("project.vcut");
+        if !proj_file.exists() {
+            anyhow::bail!("Invalid project bundle: missing project.vcut");
+        }
+
+        ProjectStorage::load_project(&proj_file)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,6 +369,51 @@ mod tests {
 
         assert!(wal.clear().is_ok());
         assert!(!wal_path.exists());
+
+        let _ = fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[test]
+    fn test_project_bundle_pack_and_unpack() {
+        let tmp_dir = env::temp_dir().join(format!("vcut_bundle_test_{}", std::process::id()));
+        let bundle_dir = tmp_dir.join("my_bundle.vcutpkg");
+
+        let dummy_asset = tmp_dir.join("asset1.mp4");
+        let dummy_script = tmp_dir.join("auto.lua");
+        let _ = fs::create_dir_all(&tmp_dir);
+        let _ = fs::write(&dummy_asset, b"video_data_12345");
+        let _ = fs::write(&dummy_script, b"-- lua script");
+
+        let mut state = ProjectState::new("Bundle Proj");
+        let mut track = Track::new(TrackId(1), "V1");
+        track.add_clip(Clip::new(
+            ClipId(1),
+            "asset1.mp4".into(),
+            AssetId(1),
+            FrameTime(0),
+            FrameTime(3_000_000),
+        ));
+        state.timeline.add_track(track);
+
+        // 1. 打包
+        let manifest = ProjectBundle::pack_bundle(
+            &bundle_dir,
+            &state,
+            &[dummy_asset],
+            &[dummy_script],
+        ).expect("Failed to pack bundle");
+
+        assert_eq!(manifest.project_name, "Bundle Proj");
+        assert_eq!(manifest.media_assets, vec!["asset1.mp4"]);
+        assert_eq!(manifest.scripts, vec!["auto.lua"]);
+        assert!(bundle_dir.join("manifest.json").exists());
+        assert!(bundle_dir.join("assets/asset1.mp4").exists());
+        assert!(bundle_dir.join("scripts/auto.lua").exists());
+
+        // 2. 解包
+        let loaded = ProjectBundle::unpack_bundle(&bundle_dir).expect("Failed to unpack bundle");
+        assert_eq!(loaded.name, "Bundle Proj");
+        assert_eq!(loaded.timeline.tracks[0].clips[0].name, "asset1.mp4");
 
         let _ = fs::remove_dir_all(&tmp_dir);
     }

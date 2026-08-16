@@ -318,6 +318,20 @@ pub fn get_all_command_help_items() -> Vec<CommandHelpItem> {
             category: "高级功能",
         },
         CommandHelpItem {
+            name: ":pack_project",
+            alias: ":bundle",
+            args: "[dir]",
+            description: "将项目、关联媒体资产与脚本打包为自包含归档包",
+            category: "高级功能",
+        },
+        CommandHelpItem {
+            name: ":unpack_project",
+            alias: ":open_bundle",
+            args: "<dir>",
+            description: "从自包含归档包中导入并打开项目",
+            category: "高级功能",
+        },
+        CommandHelpItem {
             name: ":detach_audio",
             alias: ":split_av",
             args: "",
