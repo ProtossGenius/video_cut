@@ -272,6 +272,7 @@ impl EditorCommand for MergeClipsCommand {
             color_grading: crate::effects::ColorGradingParams::default(),
             transition_out: None,
             text_overlay: None,
+            easing_curve: crate::effects::EasingCurve::default(),
         };
 
         track.clips.retain(|c| !self.clip_ids.contains(&c.id));
@@ -400,6 +401,7 @@ impl EditorCommand for MergeCutCommand {
             color_grading: crate::effects::ColorGradingParams::default(),
             transition_out: None,
             text_overlay: None,
+            easing_curve: crate::effects::EasingCurve::default(),
         };
 
         remaining_clips.push(new_cut_clip);

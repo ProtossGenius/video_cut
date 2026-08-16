@@ -220,6 +220,13 @@ pub fn get_all_command_help_items() -> Vec<CommandHelpItem> {
             category: "时间导航",
         },
         CommandHelpItem {
+            name: ":easing",
+            alias: ":curve",
+            args: "[preset | bezier x1 y1 x2 y2]",
+            description: "打开贝塞尔曲线可视化编辑器或设置缓动曲线 (linear, ease_in, ease_out, ease_in_out, bounce, elastic)",
+            category: "特效控制",
+        },
+        CommandHelpItem {
             name: ":fadein",
             alias: ":fade_in",
             args: "<秒数/时间>",
@@ -383,6 +390,7 @@ pub struct MainInterfaceUiState {
     pub status_message: Option<String>,
     pub snapping_enabled: bool, // 磁性吸附开关 (默认开启)
     pub active_snap_guide: Option<crate::timeline::SnapResult>, // 当前吸附对齐标尺线与说明
+    pub show_easing_modal: bool, // :easing / :curve 弹出的贝塞尔缓动曲线可视化编辑器
 }
 
 impl Default for MainInterfaceUiState {
@@ -429,6 +437,7 @@ impl Default for MainInterfaceUiState {
             status_message: None,
             snapping_enabled: true,
             active_snap_guide: None,
+            show_easing_modal: false,
         }
     }
 }
@@ -1630,6 +1639,43 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                                         ui.close();
                                     }
                                 });
+                                ui.menu_button("📈 缓动曲线 (Easing Curve)", |ui| {
+                                    if ui.button("打开曲线编辑器 (:easing)").clicked() {
+                                        state.show_easing_modal = true;
+                                        ui.close();
+                                    }
+                                    ui.separator();
+                                    if ui.button("平滑缓入缓出 (:easing ease_in_out)").clicked() {
+                                        state.command_input = ":easing ease_in_out".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("平滑加速 (:easing ease_in)").clicked() {
+                                        state.command_input = ":easing ease_in".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("平滑减速 (:easing ease_out)").clicked() {
+                                        state.command_input = ":easing ease_out".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("弹力弹跳 (:easing bounce)").clicked() {
+                                        state.command_input = ":easing bounce".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("弹性阻尼 (:easing elastic)").clicked() {
+                                        state.command_input = ":easing elastic".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("匀速直线 (:easing linear)").clicked() {
+                                        state.command_input = ":easing linear".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                });
                                 if ui.button("🏷 添加局部锚点 (m)").clicked() {
                                     state.anchor_mark_session = Some(AnchorMarkSession {
                                         scope: AnchorScope::Local,
@@ -1984,6 +2030,11 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
     // 11. 浮动独立视频渲染导出面板 (Export Modal - :export 唤出)
     if state.show_export_modal {
         draw_export_modal(ui, project, state);
+    }
+
+    // 12. 浮动独立关键帧贝塞尔缓动曲线可视化编辑器 (Easing Modal - :easing / :curve 唤出)
+    if state.show_easing_modal {
+        draw_easing_modal(ui, project, state);
     }
 }
 
@@ -3455,6 +3506,234 @@ fn draw_export_modal(ui: &mut Ui, project: &ProjectState, state: &mut MainInterf
 
     if do_close {
         state.show_export_modal = false;
+    }
+}
+
+/// 绘制 12. 贝塞尔缓动曲线可视化编辑器弹窗
+fn draw_easing_modal(
+    ui: &mut Ui,
+    project: &mut ProjectState,
+    state: &mut MainInterfaceUiState,
+) {
+    let full_rect = ui.max_rect();
+    let modal_width = 540.0;
+    let modal_height = 430.0;
+    let modal_rect = Rect::from_center_size(
+        full_rect.center(),
+        vec2(modal_width, modal_height),
+    );
+
+    // 绘制暗色半透明背景遮罩
+    ui.painter().rect_filled(
+        full_rect,
+        0.0,
+        Color32::from_rgba_unmultiplied(0, 0, 0, 175),
+    );
+
+    // 绘制弹窗背景与边框
+    ui.painter().rect_filled(modal_rect, CornerRadius::same(10), Theme::BG_PANEL);
+    ui.painter().rect_stroke(
+        modal_rect,
+        CornerRadius::same(10),
+        Stroke::new(1.5, Theme::ACCENT_CYAN),
+        egui::StrokeKind::Inside,
+    );
+
+    let mut do_close = false;
+    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        do_close = true;
+    }
+
+    let track_idx = state.selected_track_idx;
+    let playhead = FrameTime(state.playhead_us);
+
+    // 获取当前切片的可变引用
+    let current_clip = project
+        .timeline
+        .tracks
+        .get_mut(track_idx)
+        .and_then(|t| t.clips.iter_mut().find(|c| playhead >= c.timeline_start && playhead <= c.timeline_end()));
+
+    ui.scope_builder(UiBuilder::new().max_rect(modal_rect), |ui| {
+        ui.vertical(|ui| {
+            ui.add_space(14.0);
+
+            // 标题栏
+            ui.horizontal(|ui| {
+                ui.add_space(16.0);
+                ui.label(
+                    RichText::new("📈 关键帧贝塞尔缓动曲线编辑器")
+                        .size(16.0)
+                        .strong()
+                        .color(Theme::ACCENT_CYAN),
+                );
+                ui.label(
+                    RichText::new("(Cubic Bezier Visualizer)")
+                        .size(11.0)
+                        .color(Theme::TEXT_MUTED),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.add_space(14.0);
+                    if ui.button(RichText::new(" ✕ ").size(14.0).color(Theme::TEXT_MUTED)).clicked() {
+                        do_close = true;
+                    }
+                });
+            });
+
+            ui.add_space(8.0);
+            ui.separator();
+            ui.add_space(10.0);
+
+            if let Some(clip) = current_clip {
+                let mut current_curve = clip.easing_curve;
+
+                ui.horizontal(|ui| {
+                    ui.add_space(16.0);
+                    ui.label(RichText::new(format!("当前切片: {}", clip.name)).size(13.0).color(Theme::TEXT_PRIMARY).strong());
+                    ui.add_space(12.0);
+                    ui.label(RichText::new(format!("当前缓动: {}", current_curve.name())).size(12.0).color(Theme::ACCENT_ORANGE));
+                });
+
+                ui.add_space(10.0);
+
+                // 中间主区域：左侧 230x230 交互画布，右侧 预设选择与控制点数值
+                ui.horizontal(|ui| {
+                    ui.add_space(20.0);
+
+                    // 1. 230x230 曲线画布
+                    let canvas_size = 230.0;
+                    let (canvas_rect, response) = ui.allocate_exact_size(vec2(canvas_size, canvas_size), egui::Sense::click_and_drag());
+                    let painter = ui.painter_at(canvas_rect);
+
+                    // 画布背景与网格
+                    painter.rect_filled(canvas_rect, CornerRadius::same(6), Color32::from_rgb(18, 20, 24));
+                    painter.rect_stroke(canvas_rect, CornerRadius::same(6), Stroke::new(1.0, Theme::BORDER_MEDIUM), egui::StrokeKind::Inside);
+
+                    // 辅助参考网格 (0.25, 0.5, 0.75)
+                    for step in 1..4 {
+                        let frac = step as f32 * 0.25;
+                        let gx = canvas_rect.min.x + frac * canvas_size;
+                        let gy = canvas_rect.max.y - frac * canvas_size;
+                        painter.line_segment([pos2(gx, canvas_rect.min.y), pos2(gx, canvas_rect.max.y)], Stroke::new(0.5, Color32::from_rgb(35, 38, 45)));
+                        painter.line_segment([pos2(canvas_rect.min.x, gy), pos2(canvas_rect.max.x, gy)], Stroke::new(0.5, Color32::from_rgb(35, 38, 45)));
+                    }
+
+                    // 对角线性参考线 (0,0) -> (1,1)
+                    painter.line_segment([pos2(canvas_rect.min.x, canvas_rect.max.y), pos2(canvas_rect.max.x, canvas_rect.min.y)], Stroke::new(1.0, Color32::from_rgb(45, 50, 60)));
+
+                    // 采样并绘制缓动曲线 (100 段)
+                    let samples = 100;
+                    let mut prev_pt = pos2(canvas_rect.min.x, canvas_rect.max.y);
+                    for i in 1..=samples {
+                        let t = i as f32 / samples as f32;
+                        let val = current_curve.evaluate(t);
+                        let px = canvas_rect.min.x + t * canvas_size;
+                        let py = canvas_rect.max.y - val * canvas_size;
+                        let cur_pt = pos2(px, py);
+                        painter.line_segment([prev_pt, cur_pt], Stroke::new(2.5, Theme::ACCENT_CYAN));
+                        prev_pt = cur_pt;
+                    }
+
+                    // 绘制控制点手柄 P1, P2 (如果是 CubicBezier 或标准预设)
+                    let p1_screen = pos2(canvas_rect.min.x + current_curve.p1[0] * canvas_size, canvas_rect.max.y - current_curve.p1[1] * canvas_size);
+                    let p2_screen = pos2(canvas_rect.min.x + current_curve.p2[0] * canvas_size, canvas_rect.max.y - current_curve.p2[1] * canvas_size);
+
+                    // 控制线
+                    painter.line_segment([pos2(canvas_rect.min.x, canvas_rect.max.y), p1_screen], Stroke::new(1.5, Color32::from_rgb(255, 140, 0)));
+                    painter.line_segment([pos2(canvas_rect.max.x, canvas_rect.min.y), p2_screen], Stroke::new(1.5, Color32::from_rgb(180, 80, 255)));
+
+                    // 控制柄端点
+                    painter.circle_filled(p1_screen, 6.0, Color32::from_rgb(255, 140, 0));
+                    painter.circle_filled(p2_screen, 6.0, Color32::from_rgb(180, 80, 255));
+
+                    // 鼠标拖拽控制点交互
+                    if response.dragged() {
+                        if let Some(m_pos) = response.interact_pointer_pos() {
+                            let rel_x = ((m_pos.x - canvas_rect.min.x) / canvas_size).clamp(0.0, 1.0);
+                            let rel_y = ((canvas_rect.max.y - m_pos.y) / canvas_size).clamp(-0.5, 1.5);
+
+                            let dist_p1 = m_pos.distance(p1_screen);
+                            let dist_p2 = m_pos.distance(p2_screen);
+
+                            if dist_p1 < dist_p2 {
+                                current_curve.p1 = [rel_x, rel_y];
+                                current_curve.easing_type = crate::effects::EasingType::CubicBezier;
+                            } else {
+                                current_curve.p2 = [rel_x, rel_y];
+                                current_curve.easing_type = crate::effects::EasingType::CubicBezier;
+                            }
+                            clip.easing_curve = current_curve;
+                        }
+                    }
+
+                    // 实时动画物理运动预览 (Bouncing Ball Preview)
+                    let time = ui.input(|i| i.time as f32);
+                    let cycle = (time % 2.0) / 2.0; // 0.0 ~ 1.0
+                    let pingpong = if cycle < 0.5 { cycle * 2.0 } else { 2.0 - cycle * 2.0 };
+                    let anim_val = current_curve.evaluate(pingpong);
+                    let ball_x = canvas_rect.min.x + pingpong * canvas_size;
+                    let ball_y = canvas_rect.max.y - anim_val * canvas_size;
+                    painter.circle_filled(pos2(ball_x, ball_y), 5.0, Color32::WHITE);
+
+                    ui.add_space(20.0);
+
+                    // 2. 右侧预设按钮与参数
+                    ui.vertical(|ui| {
+                        ui.label(RichText::new("标准缓动预设:").strong().color(Theme::TEXT_PRIMARY));
+                        ui.add_space(6.0);
+
+                        if ui.selectable_label(current_curve.easing_type == crate::effects::EasingType::Linear, "匀速直线 (Linear)").clicked() {
+                            clip.easing_curve = crate::effects::EasingCurve::linear();
+                        }
+                        if ui.selectable_label(current_curve.easing_type == crate::effects::EasingType::EaseIn, "平滑加速 (Ease In)").clicked() {
+                            clip.easing_curve = crate::effects::EasingCurve::ease_in();
+                        }
+                        if ui.selectable_label(current_curve.easing_type == crate::effects::EasingType::EaseOut, "平滑减速 (Ease Out)").clicked() {
+                            clip.easing_curve = crate::effects::EasingCurve::ease_out();
+                        }
+                        if ui.selectable_label(current_curve.easing_type == crate::effects::EasingType::EaseInOut, "平滑缓入缓出 (Ease In-Out)").clicked() {
+                            clip.easing_curve = crate::effects::EasingCurve::ease_in_out();
+                        }
+                        if ui.selectable_label(current_curve.easing_type == crate::effects::EasingType::BounceOut, "弹力弹跳 (Bounce)").clicked() {
+                            clip.easing_curve = crate::effects::EasingCurve::bounce_out();
+                        }
+                        if ui.selectable_label(current_curve.easing_type == crate::effects::EasingType::ElasticOut, "弹性阻尼 (Elastic)").clicked() {
+                            clip.easing_curve = crate::effects::EasingCurve::elastic_out();
+                        }
+
+                        ui.add_space(10.0);
+                        ui.separator();
+                        ui.add_space(6.0);
+
+                        ui.label(RichText::new(format!("P1: [{:.2}, {:.2}]", current_curve.p1[0], current_curve.p1[1])).size(11.0).color(Color32::from_rgb(255, 140, 0)));
+                        ui.label(RichText::new(format!("P2: [{:.2}, {:.2}]", current_curve.p2[0], current_curve.p2[1])).size(11.0).color(Color32::from_rgb(180, 80, 255)));
+                    });
+                });
+            } else {
+                ui.add_space(30.0);
+                ui.label(RichText::new("当前播放头下未选中任何切片").size(14.0).color(Theme::TEXT_MUTED));
+            }
+
+            ui.add_space(12.0);
+            ui.separator();
+            ui.add_space(8.0);
+
+            // 底部操作栏
+            ui.horizontal(|ui| {
+                ui.add_space(20.0);
+                ui.label(RichText::new("提示: 可在画布中直接拖拽橙/紫色手柄调节贝塞尔曲线").size(11.0).color(Theme::TEXT_MUTED));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.add_space(16.0);
+                    if ui.button(RichText::new(" 完成 (Esc) ").size(12.0)).clicked() {
+                        do_close = true;
+                    }
+                });
+            });
+        });
+    });
+
+    if do_close {
+        state.show_easing_modal = false;
     }
 }
 

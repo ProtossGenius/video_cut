@@ -1,6 +1,7 @@
 pub mod animation;
 pub mod camera;
 pub mod color;
+pub mod easing;
 pub mod follow;
 pub mod mask;
 pub mod registry;
@@ -11,6 +12,7 @@ pub mod transition;
 pub use animation::*;
 pub use camera::*;
 pub use color::*;
+pub use easing::*;
 pub use follow::*;
 pub use mask::*;
 pub use registry::*;

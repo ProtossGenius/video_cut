@@ -95,6 +95,8 @@ pub struct Clip {
     pub transition_out: Option<crate::effects::Transition>,
     /// 字幕与多行富文本气泡覆盖 (Text & Subtitle Overlay)
     pub text_overlay: Option<crate::effects::TextOverlayParams>,
+    /// 动画与关键帧插值缓动曲线 (Easing Curve)
+    pub easing_curve: crate::effects::EasingCurve,
 }
 
 impl Clip {
@@ -126,6 +128,7 @@ impl Clip {
             color_grading: crate::effects::ColorGradingParams::default(),
             transition_out: None,
             text_overlay: None,
+            easing_curve: crate::effects::EasingCurve::default(),
         }
     }
 
@@ -188,6 +191,11 @@ impl Clip {
 
     pub fn with_text_overlay(mut self, text: Option<crate::effects::TextOverlayParams>) -> Self {
         self.text_overlay = text;
+        self
+    }
+
+    pub fn with_easing_curve(mut self, curve: crate::effects::EasingCurve) -> Self {
+        self.easing_curve = curve;
         self
     }
 

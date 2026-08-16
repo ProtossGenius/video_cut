@@ -684,6 +684,48 @@ impl VideoCutApp {
                 let status = if self.main_ui_state.snapping_enabled { "开启" } else { "关闭" };
                 self.main_ui_state.status_message = Some(format!("磁性时间线吸附已{}", status));
             }
+            "easing" | "curve" => {
+                if parts.len() == 1 {
+                    self.main_ui_state.show_easing_modal = true;
+                } else if parts.len() == 2 {
+                    if let Some(curve) = crate::effects::EasingCurve::from_str_loose(parts[1]) {
+                        let track_idx = self.main_ui_state.selected_track_idx;
+                        if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                            let playhead = FrameTime(self.main_ui_state.playhead_us);
+                            if let Some(clip) = track.clips.iter_mut().find(|c| {
+                                playhead >= c.timeline_start && playhead <= c.timeline_end()
+                            }) {
+                                clip.easing_curve = curve;
+                                self.main_ui_state.status_message = Some(format!("切片 '{}' 缓动曲线已设置为: {}", clip.name, curve.name()));
+                            }
+                        }
+                    } else if parts[1] == "modal" || parts[1] == "edit" {
+                        self.main_ui_state.show_easing_modal = true;
+                    }
+                } else if parts.len() >= 5 {
+                    // :easing bezier x1 y1 x2 y2 或 :easing x1 y1 x2 y2
+                    let (x1_str, y1_str, x2_str, y2_str) = if parts[1] == "bezier" && parts.len() >= 6 {
+                        (parts[2], parts[3], parts[4], parts[5])
+                    } else {
+                        (parts[1], parts[2], parts[3], parts[4])
+                    };
+                    let x1: f32 = x1_str.parse().unwrap_or(0.25);
+                    let y1: f32 = y1_str.parse().unwrap_or(0.1);
+                    let x2: f32 = x2_str.parse().unwrap_or(0.25);
+                    let y2: f32 = y2_str.parse().unwrap_or(1.0);
+                    let curve = crate::effects::EasingCurve::cubic_bezier(x1, y1, x2, y2);
+                    let track_idx = self.main_ui_state.selected_track_idx;
+                    if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                        let playhead = FrameTime(self.main_ui_state.playhead_us);
+                        if let Some(clip) = track.clips.iter_mut().find(|c| {
+                            playhead >= c.timeline_start && playhead <= c.timeline_end()
+                        }) {
+                            clip.easing_curve = curve;
+                            self.main_ui_state.status_message = Some(format!("切片 '{}' 自定义贝塞尔曲线已设置为: [{:.2}, {:.2}, {:.2}, {:.2}]", clip.name, x1, y1, x2, y2));
+                        }
+                    }
+                }
+            }
             "vol" | "volume" => {
                 if parts.len() > 1 {
                     if let Ok(v) = parts[1].parse::<f32>() {
@@ -2246,5 +2288,38 @@ mod tests {
 
         app.execute_command_line(":toggle_snap");
         assert!(app.main_ui_state.snapping_enabled);
+    }
+
+    #[test]
+    fn test_easing_commands() {
+        let mut app = VideoCutApp::new_for_test();
+        let track = app.project_state.timeline.tracks.first_mut().unwrap();
+        track.clips.clear();
+        let clip = crate::timeline::Clip::new(crate::timeline::ClipId(1), "intro.mp4".into(), crate::timeline::AssetId(1), FrameTime(0), FrameTime(10_000_000));
+        track.add_clip(clip);
+
+        app.main_ui_state.playhead_us = 2_000_000;
+
+        // 1. 打开曲线可视化编辑器 :easing
+        app.execute_command_line(":easing");
+        assert!(app.main_ui_state.show_easing_modal);
+        app.main_ui_state.show_easing_modal = false;
+
+        // 2. 设置标准缓动预设 :easing bounce
+        app.execute_command_line(":easing bounce");
+        let c1 = app.project_state.timeline.tracks[0].clips[0].easing_curve;
+        assert_eq!(c1.easing_type, crate::effects::EasingType::BounceOut);
+
+        // 3. 设置平滑加速 :easing ease_in
+        app.execute_command_line(":easing ease_in");
+        let c2 = app.project_state.timeline.tracks[0].clips[0].easing_curve;
+        assert_eq!(c2.easing_type, crate::effects::EasingType::EaseIn);
+
+        // 4. 设置自定义三次方贝塞尔曲线 :easing bezier 0.4 0.0 0.2 1.0
+        app.execute_command_line(":easing bezier 0.4 0.0 0.2 1.0");
+        let c3 = app.project_state.timeline.tracks[0].clips[0].easing_curve;
+        assert_eq!(c3.easing_type, crate::effects::EasingType::CubicBezier);
+        assert_eq!(c3.p1, [0.4, 0.0]);
+        assert_eq!(c3.p2, [0.2, 1.0]);
     }
 }

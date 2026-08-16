@@ -84,6 +84,7 @@
 67. [x] **完成任务**：实装视频转场特效管线与交叉溶解/划像引擎 (`:transition [dissolve|wipe_left|wipe_right|dip_black]`)
 68. [x] **完成任务**：实装字幕与多行富文本气泡渲染器 (`:text`/`:fontsize`/`:textcolor`/`:bgbox`)
 69. [x] **完成任务**：实装磁性时间线吸附与智能对齐标尺 (`:snap [on|off]`, Smart Guide Lines)
+70. [x] **完成任务**：实装关键帧贝塞尔缓动曲线编辑器 (`:easing`/`:curve`, EasingCurve & CubicBezier)
 
 
 

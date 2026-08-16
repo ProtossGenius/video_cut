@@ -217,6 +217,7 @@ impl CutWorkflowEngine {
                                 color_grading: crate::effects::ColorGradingParams::default(),
                                 transition_out: None,
                                 text_overlay: None,
+                                easing_curve: crate::effects::EasingCurve::default(),
                             };
                             track.clips.retain(|c| !clip_ids.contains(&c.id.0));
                             track.add_clip(merged_clip);
