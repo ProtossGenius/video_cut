@@ -52,6 +52,20 @@ pub fn get_all_command_help_items() -> Vec<CommandHelpItem> {
             category: "剪辑操作",
         },
         CommandHelpItem {
+            name: ":rd",
+            alias: ":ripple_delete",
+            args: "",
+            description: "波纹删除当前切片并将其后切片自动向左吸附平移 (Shift+X)",
+            category: "剪辑操作",
+        },
+        CommandHelpItem {
+            name: ":close_gaps",
+            alias: ":closegaps",
+            args: "",
+            description: "自动消除当前轨道上所有相邻切片间的空白间隙",
+            category: "剪辑操作",
+        },
+        CommandHelpItem {
             name: ":goto",
             alias: "",
             args: "<时间/增量>",

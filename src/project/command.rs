@@ -407,6 +407,155 @@ impl EditorCommand for MergeCutCommand {
     }
 }
 
+/// 6. 波纹删除命令 (Ripple Delete: 删除切片并自动将后续切片向左平移闭合间隙)
+pub struct RippleDeleteClipCommand {
+    pub track_id: TrackId,
+    pub clip_id: ClipId,
+    deleted_clip: Option<Clip>,
+    shifted_clips: Option<Vec<(ClipId, FrameTime)>>, // (ClipId, 原始开始时间)
+}
+
+impl RippleDeleteClipCommand {
+    pub fn new(track_id: TrackId, clip_id: ClipId) -> Self {
+        Self {
+            track_id,
+            clip_id,
+            deleted_clip: None,
+            shifted_clips: None,
+        }
+    }
+}
+
+impl EditorCommand for RippleDeleteClipCommand {
+    fn execute(&mut self, state: &mut ProjectState) -> Result<()> {
+        let track = state
+            .timeline
+            .track_mut(self.track_id)
+            .ok_or_else(|| anyhow!("Track not found"))?;
+
+        let pos = track
+            .clips
+            .iter()
+            .position(|c| c.id == self.clip_id)
+            .ok_or_else(|| anyhow!("Clip not found"))?;
+
+        let clip = track.clips.remove(pos);
+        let clip_dur = clip.duration();
+        let clip_end = clip.timeline_end();
+
+        // 记录后续切片的原始开始时间，并将其整体向左平移 clip_dur
+        let mut original_shifts = Vec::new();
+        for c in &mut track.clips {
+            if c.timeline_start >= clip_end {
+                original_shifts.push((c.id, c.timeline_start));
+                c.timeline_start = c.timeline_start - clip_dur;
+            }
+        }
+
+        // 放入垃圾回收轨道
+        state.timeline.trash_track.add_clip(clip.clone());
+        self.deleted_clip = Some(clip);
+        self.shifted_clips = Some(original_shifts);
+
+        Ok(())
+    }
+
+    fn undo(&mut self, state: &mut ProjectState) -> Result<()> {
+        let deleted = self
+            .deleted_clip
+            .take()
+            .ok_or_else(|| anyhow!("No deleted clip for undo"))?;
+        let shifts = self
+            .shifted_clips
+            .take()
+            .ok_or_else(|| anyhow!("No shifted clips for undo"))?;
+
+        // 从垃圾回收轨道移出
+        state.timeline.trash_track.remove_clip(deleted.id);
+
+        let track = state
+            .timeline
+            .track_mut(self.track_id)
+            .ok_or_else(|| anyhow!("Track not found"))?;
+
+        // 恢复后续切片的原始位置
+        for (cid, orig_start) in shifts {
+            if let Some(c) = track.clips.iter_mut().find(|c| c.id == cid) {
+                c.timeline_start = orig_start;
+            }
+        }
+
+        // 放回被删除切片
+        track.add_clip(deleted);
+        track.sort_clips();
+
+        Ok(())
+    }
+}
+
+/// 7. 闭合轨道所有空白间隙命令 (:close_gaps / Close Gaps)
+pub struct CloseGapsCommand {
+    pub track_id: TrackId,
+    original_positions: Option<Vec<(ClipId, FrameTime)>>,
+}
+
+impl CloseGapsCommand {
+    pub fn new(track_id: TrackId) -> Self {
+        Self {
+            track_id,
+            original_positions: None,
+        }
+    }
+}
+
+impl EditorCommand for CloseGapsCommand {
+    fn execute(&mut self, state: &mut ProjectState) -> Result<()> {
+        let track = state
+            .timeline
+            .track_mut(self.track_id)
+            .ok_or_else(|| anyhow!("Track not found"))?;
+
+        if track.clips.is_empty() {
+            return Ok(());
+        }
+
+        track.clips.sort_by_key(|c| c.timeline_start);
+        let mut originals = Vec::with_capacity(track.clips.len());
+        let mut cur_pos = FrameTime(0);
+
+        for clip in &mut track.clips {
+            originals.push((clip.id, clip.timeline_start));
+            let dur = clip.duration();
+            clip.timeline_start = cur_pos;
+            cur_pos = cur_pos + dur;
+        }
+
+        self.original_positions = Some(originals);
+        Ok(())
+    }
+
+    fn undo(&mut self, state: &mut ProjectState) -> Result<()> {
+        let originals = self
+            .original_positions
+            .take()
+            .ok_or_else(|| anyhow!("No original positions for undo"))?;
+
+        let track = state
+            .timeline
+            .track_mut(self.track_id)
+            .ok_or_else(|| anyhow!("Track not found"))?;
+
+        for (cid, orig_start) in originals {
+            if let Some(c) = track.clips.iter_mut().find(|c| c.id == cid) {
+                c.timeline_start = orig_start;
+            }
+        }
+        track.clips.sort_by_key(|c| c.timeline_start);
+
+        Ok(())
+    }
+}
+
 /// 历史栈管理
 pub struct CommandHistory {
     undo_stack: Vec<Box<dyn EditorCommand>>,
@@ -625,5 +774,69 @@ mod tests {
         let t_restored = state.timeline.track_mut(TrackId(1)).unwrap();
         assert_eq!(t_restored.clips.len(), 1);
         assert_eq!(t_restored.clips[0].duration(), FrameTime(10_000_000));
+    }
+
+    #[test]
+    fn test_ripple_delete_and_undo() {
+        let mut state = ProjectState::new("Test Ripple Delete");
+        let mut track = Track::new(TrackId(1), "V1");
+        // Clip 1: 0s ~ 5s (5s 长)
+        track.add_clip(Clip::new(ClipId(1), "clip1.mp4".into(), AssetId(1), FrameTime(0), FrameTime(5_000_000)));
+        // Clip 2: 5s ~ 8s (3s 长)
+        track.add_clip(Clip::new(ClipId(2), "clip2.mp4".into(), AssetId(2), FrameTime(5_000_000), FrameTime(3_000_000)));
+        // Clip 3: 8s ~ 15s (7s 长)
+        track.add_clip(Clip::new(ClipId(3), "clip3.mp4".into(), AssetId(3), FrameTime(8_000_000), FrameTime(7_000_000)));
+        state.timeline.add_track(track);
+
+        let mut history = CommandHistory::new();
+        // 波纹删除 Clip 2 (长度 3s)
+        let cmd = RippleDeleteClipCommand::new(TrackId(1), ClipId(2));
+        assert!(history.execute(Box::new(cmd), &mut state).is_ok());
+
+        let t = state.timeline.track(TrackId(1)).unwrap();
+        assert_eq!(t.clips.len(), 2);
+        assert_eq!(t.clips[0].id, ClipId(1));
+        assert_eq!(t.clips[0].timeline_start, FrameTime(0));
+        assert_eq!(t.clips[1].id, ClipId(3));
+        // Clip 3 自动左移 3 秒: 8s - 3s = 5s
+        assert_eq!(t.clips[1].timeline_start, FrameTime(5_000_000));
+        assert_eq!(state.timeline.trash_track.clips.len(), 1);
+
+        // 撤销
+        assert!(history.undo(&mut state).is_ok());
+        let t_undo = state.timeline.track(TrackId(1)).unwrap();
+        assert_eq!(t_undo.clips.len(), 3);
+        assert_eq!(t_undo.clips[2].timeline_start, FrameTime(8_000_000));
+        assert_eq!(state.timeline.trash_track.clips.len(), 0);
+    }
+
+    #[test]
+    fn test_close_gaps_and_undo() {
+        let mut state = ProjectState::new("Test Close Gaps");
+        let mut track = Track::new(TrackId(1), "V1");
+        // Clip 1: 2s ~ 5s (3s 长，有 2s 前置间隙)
+        track.add_clip(Clip::new(ClipId(1), "clip1.mp4".into(), AssetId(1), FrameTime(2_000_000), FrameTime(3_000_000)));
+        // Clip 2: 8s ~ 10s (2s 长，有 3s 中间间隙)
+        track.add_clip(Clip::new(ClipId(2), "clip2.mp4".into(), AssetId(2), FrameTime(8_000_000), FrameTime(2_000_000)));
+        state.timeline.add_track(track);
+
+        let mut history = CommandHistory::new();
+        let cmd = CloseGapsCommand::new(TrackId(1));
+        assert!(history.execute(Box::new(cmd), &mut state).is_ok());
+
+        let t = state.timeline.track(TrackId(1)).unwrap();
+        assert_eq!(t.clips.len(), 2);
+        // Clip 1 紧凑对齐到 0s
+        assert_eq!(t.clips[0].timeline_start, FrameTime(0));
+        assert_eq!(t.clips[0].duration(), FrameTime(3_000_000));
+        // Clip 2 紧凑对齐到 3s
+        assert_eq!(t.clips[1].timeline_start, FrameTime(3_000_000));
+        assert_eq!(t.clips[1].duration(), FrameTime(2_000_000));
+
+        // 撤销
+        assert!(history.undo(&mut state).is_ok());
+        let t_undo = state.timeline.track(TrackId(1)).unwrap();
+        assert_eq!(t_undo.clips[0].timeline_start, FrameTime(2_000_000));
+        assert_eq!(t_undo.clips[1].timeline_start, FrameTime(8_000_000));
     }
 }

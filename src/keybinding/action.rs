@@ -17,6 +17,8 @@ pub enum Action {
     // ==== 编辑操作 ====
     Split,
     Delete,
+    RippleDelete,
+    CloseGaps,
     Yank,
     Paste,
 

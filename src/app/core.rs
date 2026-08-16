@@ -360,6 +360,12 @@ impl VideoCutApp {
                     }
                 }
             }
+            "rd" | "ripple_delete" => {
+                self.execute_action(crate::keybinding::Action::RippleDelete);
+            }
+            "close_gaps" | "closegaps" => {
+                self.execute_action(crate::keybinding::Action::CloseGaps);
+            }
             "vol" | "volume" => {
                 if parts.len() > 1 {
                     if let Ok(v) = parts[1].parse::<f32>() {
@@ -495,6 +501,27 @@ impl VideoCutApp {
                     let cmd = crate::project::DeleteClipToTrashCommand::new(track_id, clip_id);
                     let _ = self.command_history.execute(Box::new(cmd), &mut self.project_state);
                     self.main_ui_state.status_message = Some(format!("已将切片 '{}' 移动至垃圾回收轨道", clip_name));
+                }
+            }
+            crate::keybinding::Action::RippleDelete => {
+                let playhead = FrameTime(self.main_ui_state.playhead_us);
+                let track_idx = self.main_ui_state.selected_track_idx;
+                let target = self.project_state.timeline.tracks.get(track_idx).and_then(|track| {
+                    track.clips.iter().find(|c| playhead >= c.timeline_start && playhead <= c.timeline_end()).map(|c| (track.id, c.id, c.name.clone()))
+                });
+                if let Some((track_id, clip_id, clip_name)) = target {
+                    let cmd = crate::project::RippleDeleteClipCommand::new(track_id, clip_id);
+                    let _ = self.command_history.execute(Box::new(cmd), &mut self.project_state);
+                    self.main_ui_state.status_message = Some(format!("已波纹删除切片 '{}' 并自动闭合后续间隙", clip_name));
+                }
+            }
+            crate::keybinding::Action::CloseGaps => {
+                let track_idx = self.main_ui_state.selected_track_idx;
+                let target = self.project_state.timeline.tracks.get(track_idx).map(|t| (t.id, t.name.clone()));
+                if let Some((track_id, track_name)) = target {
+                    let cmd = crate::project::CloseGapsCommand::new(track_id);
+                    let _ = self.command_history.execute(Box::new(cmd), &mut self.project_state);
+                    self.main_ui_state.status_message = Some(format!("已消除轨道 '{}' 上所有空白间隙", track_name));
                 }
             }
             crate::keybinding::Action::EnterVisual => {
@@ -1187,6 +1214,11 @@ impl eframe::App for VideoCutApp {
                                 }
                             }
 
+                            // 'Shift+X' 或 'x': 波纹删除当前切片 (Ripple Delete)
+                            if (i.modifiers.shift && i.key_pressed(egui::Key::X)) || (!i.modifiers.shift && !i.modifiers.ctrl && !i.modifiers.command && i.key_pressed(egui::Key::X)) {
+                                self.execute_action(crate::keybinding::Action::RippleDelete);
+                            }
+
                             // 'u': 撤销, 'Ctrl+R': 重做
                             if !i.modifiers.shift
                                 && !i.modifiers.ctrl
@@ -1682,5 +1714,36 @@ mod tests {
         app.execute_command_line(":export master.mov prores");
         assert_eq!(app.main_ui_state.export_state.output_path, "master.mov");
         assert_eq!(app.main_ui_state.export_state.preset, crate::rendering::smart_export::ExportPreset::ProResMov);
+    }
+
+    #[test]
+    fn test_ripple_delete_and_close_gaps_commands() {
+        let mut app = VideoCutApp::new_for_test();
+        // 初始已有 1 条轨道和 1 个切片
+        let track = app.project_state.timeline.tracks.first_mut().unwrap();
+        track.clips.clear();
+        track.add_clip(crate::timeline::Clip::new(crate::timeline::ClipId(1), "a.mp4".into(), crate::timeline::AssetId(1), FrameTime(0), FrameTime(4_000_000)));
+        track.add_clip(crate::timeline::Clip::new(crate::timeline::ClipId(2), "b.mp4".into(), crate::timeline::AssetId(2), FrameTime(4_000_000), FrameTime(3_000_000)));
+        track.add_clip(crate::timeline::Clip::new(crate::timeline::ClipId(3), "c.mp4".into(), crate::timeline::AssetId(3), FrameTime(7_000_000), FrameTime(5_000_000)));
+
+        // 1. 将指针放在第 2 个切片上 (5.0s)，执行 :rd (波纹删除)
+        app.main_ui_state.playhead_us = 5_000_000;
+        app.execute_command_line(":rd");
+
+        let t = app.project_state.timeline.tracks.first().unwrap();
+        assert_eq!(t.clips.len(), 2);
+        assert_eq!(t.clips[0].id, crate::timeline::ClipId(1));
+        assert_eq!(t.clips[1].id, crate::timeline::ClipId(3));
+        // 切片 3 自动前移 3 秒: 7s - 3s = 4s
+        assert_eq!(t.clips[1].timeline_start, FrameTime(4_000_000));
+
+        // 2. 人为制造一个 2 秒间隙，测试 :close_gaps
+        let t_mut = app.project_state.timeline.tracks.first_mut().unwrap();
+        t_mut.clips[1].timeline_start = FrameTime(6_000_000); // 4s~6s 为空隙
+        app.execute_command_line(":close_gaps");
+
+        let t_closed = app.project_state.timeline.tracks.first().unwrap();
+        assert_eq!(t_closed.clips[0].timeline_start, FrameTime(0));
+        assert_eq!(t_closed.clips[1].timeline_start, FrameTime(4_000_000));
     }
 }
