@@ -726,6 +726,23 @@ impl VideoCutApp {
                     }
                 }
             }
+            "pip" | "picture_in_picture" => {
+                let preset_str = parts.get(1).copied().unwrap_or("corner_br");
+                if let Some(preset) = crate::effects::PipLayoutPreset::from_str_loose(preset_str) {
+                    let track_idx = self.main_ui_state.selected_track_idx;
+                    if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                        let playhead = FrameTime(self.main_ui_state.playhead_us);
+                        if let Some(clip) = track.clips.iter_mut().find(|c| {
+                            playhead >= c.timeline_start && playhead <= c.timeline_end()
+                        }) {
+                            preset.apply_to_clip(clip, 800.0, 450.0);
+                            self.main_ui_state.status_message = Some(format!("切片 '{}' 已应用画中画/分屏预设: {}", clip.name, preset.name()));
+                        }
+                    }
+                } else {
+                    self.main_ui_state.status_message = Some(format!("未知画中画/分屏预设: {}", preset_str));
+                }
+            }
             "vol" | "volume" => {
                 if parts.len() > 1 {
                     if let Ok(v) = parts[1].parse::<f32>() {
@@ -2321,5 +2338,34 @@ mod tests {
         assert_eq!(c3.easing_type, crate::effects::EasingType::CubicBezier);
         assert_eq!(c3.p1, [0.4, 0.0]);
         assert_eq!(c3.p2, [0.2, 1.0]);
+    }
+
+    #[test]
+    fn test_pip_commands() {
+        let mut app = VideoCutApp::new_for_test();
+        let track = app.project_state.timeline.tracks.first_mut().unwrap();
+        track.clips.clear();
+        let clip = crate::timeline::Clip::new(crate::timeline::ClipId(1), "video.mp4".into(), crate::timeline::AssetId(1), FrameTime(0), FrameTime(10_000_000));
+        track.add_clip(clip);
+
+        app.main_ui_state.playhead_us = 2_000_000;
+
+        // 1. 设置右下角画中画 :pip corner_br
+        app.execute_command_line(":pip corner_br");
+        let clip1 = &app.project_state.timeline.tracks[0].clips[0];
+        assert_eq!(clip1.transform_scale, [0.35, 0.35]);
+        assert_eq!(clip1.transform_offset, [240.0, 135.0]);
+
+        // 2. 设置左半分屏 :pip split_left
+        app.execute_command_line(":pip split_left");
+        let clip2 = &app.project_state.timeline.tracks[0].clips[0];
+        assert_eq!(clip2.transform_scale, [0.5, 0.5]);
+        assert_eq!(clip2.transform_offset, [-200.0, 0.0]);
+
+        // 3. 重置为全屏充满 :pip reset
+        app.execute_command_line(":pip reset");
+        let clip3 = &app.project_state.timeline.tracks[0].clips[0];
+        assert_eq!(clip3.transform_scale, [1.0, 1.0]);
+        assert_eq!(clip3.transform_offset, [0.0, 0.0]);
     }
 }

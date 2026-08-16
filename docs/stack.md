@@ -85,6 +85,7 @@
 68. [x] **完成任务**：实装字幕与多行富文本气泡渲染器 (`:text`/`:fontsize`/`:textcolor`/`:bgbox`)
 69. [x] **完成任务**：实装磁性时间线吸附与智能对齐标尺 (`:snap [on|off]`, Smart Guide Lines)
 70. [x] **完成任务**：实装关键帧贝塞尔缓动曲线编辑器 (`:easing`/`:curve`, EasingCurve & CubicBezier)
+71. [x] **完成任务**：实装视频画中画与分屏排布模板引擎 (`:pip [corner|split_h|split_v|grid2x2|center|reset]`)
 
 
 

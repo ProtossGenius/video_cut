@@ -227,6 +227,13 @@ pub fn get_all_command_help_items() -> Vec<CommandHelpItem> {
             category: "特效控制",
         },
         CommandHelpItem {
+            name: ":pip",
+            alias: ":picture_in_picture",
+            args: "<corner_br|tr|bl|tl | split_left|right|top|bottom | grid_tl|tr|bl|br | center | reset>",
+            description: "一键应用画中画浮窗或分屏排布模板预设",
+            category: "特效控制",
+        },
+        CommandHelpItem {
             name: ":fadein",
             alias: ":fade_in",
             args: "<秒数/时间>",
@@ -1672,6 +1679,76 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                                     }
                                     if ui.button("匀速直线 (:easing linear)").clicked() {
                                         state.command_input = ":easing linear".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                });
+                                ui.menu_button("🖼 画中画与分屏布局 (PIP & Split)", |ui| {
+                                    if ui.button("右下角画中画 (:pip corner_br)").clicked() {
+                                        state.command_input = ":pip corner_br".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("右上角画中画 (:pip corner_tr)").clicked() {
+                                        state.command_input = ":pip corner_tr".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("左下角画中画 (:pip corner_bl)").clicked() {
+                                        state.command_input = ":pip corner_bl".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("居中悬浮浮窗 (:pip center)").clicked() {
+                                        state.command_input = ":pip center".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    ui.separator();
+                                    if ui.button("左半屏分屏 (:pip split_left)").clicked() {
+                                        state.command_input = ":pip split_left".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("右半屏分屏 (:pip split_right)").clicked() {
+                                        state.command_input = ":pip split_right".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("上半屏分屏 (:pip split_top)").clicked() {
+                                        state.command_input = ":pip split_top".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("下半屏分屏 (:pip split_bottom)").clicked() {
+                                        state.command_input = ":pip split_bottom".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    ui.separator();
+                                    if ui.button("四宫格左上 (:pip grid_tl)").clicked() {
+                                        state.command_input = ":pip grid_tl".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("四宫格右上 (:pip grid_tr)").clicked() {
+                                        state.command_input = ":pip grid_tr".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("四宫格左下 (:pip grid_bl)").clicked() {
+                                        state.command_input = ":pip grid_bl".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("四宫格右下 (:pip grid_br)").clicked() {
+                                        state.command_input = ":pip grid_br".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    ui.separator();
+                                    if ui.button("重置为全屏充满 (:pip reset)").clicked() {
+                                        state.command_input = ":pip reset".into();
                                         state.is_command_mode = true;
                                         ui.close();
                                     }
