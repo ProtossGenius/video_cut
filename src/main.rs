@@ -10,10 +10,24 @@ pub mod rendering;
 pub mod search;
 pub mod timeline;
 
-fn main() {
-    // Initialize logger
-    env_logger::init();
+use eframe::egui;
 
-    println!("Welcome to VideoCut!");
-    // TODO: Initialize egui/eframe application here
+fn main() -> eframe::Result<()> {
+    // 初始化日志记录
+    env_logger::init();
+    
+    // 设置 eframe 窗口选项
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([1280.0, 720.0])
+            .with_title("VideoCut"),
+        ..Default::default()
+    };
+
+    // 运行原生应用
+    eframe::run_native(
+        "VideoCut",
+        options,
+        Box::new(|_cc| Ok(Box::new(app::VideoCutApp::default()))),
+    )
 }
