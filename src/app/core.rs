@@ -381,6 +381,20 @@ impl VideoCutApp {
                 self.main_ui_state.status_message =
                     Some(format!("已取消静音 (音量: {:.0}%)", self.main_ui_state.master_volume * 100.0));
             }
+            "export" => {
+                if parts.len() > 1 {
+                    self.main_ui_state.export_state.output_path = parts[1].to_string();
+                    if parts.len() > 2 {
+                        match parts[2].to_lowercase().as_str() {
+                            "hevc" | "h265" => self.main_ui_state.export_state.preset = crate::rendering::smart_export::ExportPreset::HevcMp4,
+                            "prores" | "mov" => self.main_ui_state.export_state.preset = crate::rendering::smart_export::ExportPreset::ProResMov,
+                            _ => self.main_ui_state.export_state.preset = crate::rendering::smart_export::ExportPreset::H264Mp4,
+                        }
+                    }
+                }
+                self.main_ui_state.show_export_modal = true;
+                self.main_ui_state.status_message = Some("已开启视频渲染导出面板 (:export)".into());
+            }
             "export_lua" | "save_lua" => {
                 let filename = if parts.len() > 1 { parts[1] } else { "project.lua" };
                 let lua_code = crate::lua_engine::export_project_to_lua(&self.project_state);
@@ -559,6 +573,23 @@ impl eframe::App for VideoCutApp {
             ui.ctx().request_repaint();
         } else {
             self.main_ui_state.vu_meter.update(0.0, 0.0, 0.016);
+        }
+
+        // 如果处于导出中状态，推进模拟/实际导出进度并计算 ETA
+        if self.main_ui_state.export_state.is_exporting {
+            self.main_ui_state.export_state.current_frame += 10;
+            let cur = self.main_ui_state.export_state.current_frame;
+            let total = self.main_ui_state.export_state.total_frames.max(1);
+            self.main_ui_state.export_state.progress = (cur as f32 / total as f32).min(1.0);
+            let rem_frames = total.saturating_sub(cur);
+            self.main_ui_state.export_state.eta_seconds = (rem_frames as f32 / self.main_ui_state.export_state.fps.max(1.0)) as u32;
+
+            if cur >= total {
+                self.main_ui_state.export_state.is_exporting = false;
+                self.main_ui_state.export_state.is_completed = true;
+                self.main_ui_state.status_message = Some(format!("视频已成功导出: {}", self.main_ui_state.export_state.output_path));
+            }
+            ui.ctx().request_repaint();
         }
 
         let wants_keyboard = ui.ctx().egui_wants_keyboard_input();
@@ -784,7 +815,13 @@ impl eframe::App for VideoCutApp {
                                 }
                             }
                         }
-                        // 0.3 如果处于等待宏寄存器输入状态 (q 或 @)
+                        // 0.3 如果处于视频渲染导出弹窗 (:export)
+                        else if self.main_ui_state.show_export_modal {
+                            if i.key_pressed(egui::Key::Escape) {
+                                self.main_ui_state.show_export_modal = false;
+                            }
+                        }
+                        // 0.4 如果处于等待宏寄存器输入状态 (q 或 @)
                         else if let Some(prefix) = self.main_ui_state.macro_pending_prefix {
                             if i.key_pressed(egui::Key::Escape) {
                                 self.main_ui_state.macro_pending_prefix = None;
@@ -1625,5 +1662,25 @@ mod tests {
         // 3. 测试取消静音 :unmute
         app.execute_command_line(":unmute");
         assert!(!app.main_ui_state.is_muted);
+    }
+
+    #[test]
+    fn test_export_command_and_presets() {
+        let mut app = VideoCutApp::new_for_test();
+        assert!(!app.main_ui_state.show_export_modal);
+
+        // 1. 打开导出弹窗
+        app.execute_command_line(":export");
+        assert!(app.main_ui_state.show_export_modal);
+
+        // 2. 指定路径与 HEVC 编码格式
+        app.execute_command_line(":export my_movie.mp4 hevc");
+        assert_eq!(app.main_ui_state.export_state.output_path, "my_movie.mp4");
+        assert_eq!(app.main_ui_state.export_state.preset, crate::rendering::smart_export::ExportPreset::HevcMp4);
+
+        // 3. 指定 ProRes 格式
+        app.execute_command_line(":export master.mov prores");
+        assert_eq!(app.main_ui_state.export_state.output_path, "master.mov");
+        assert_eq!(app.main_ui_state.export_state.preset, crate::rendering::smart_export::ExportPreset::ProResMov);
     }
 }

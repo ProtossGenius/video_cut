@@ -1,7 +1,66 @@
 use crate::project::ProjectState;
 use crate::timeline::FrameTime;
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+
+/// 导出编码预设
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum ExportPreset {
+    #[default]
+    H264Mp4,
+    HevcMp4,
+    ProResMov,
+}
+
+impl ExportPreset {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::H264Mp4 => "H.264 / MP4 (Web 兼容性推荐)",
+            Self::HevcMp4 => "H.265 / HEVC (高压缩比，体积节省 40%)",
+            Self::ProResMov => "Apple ProRes 422 / MOV (母带无损级)",
+        }
+    }
+
+    pub fn container_extension(&self) -> &'static str {
+        match self {
+            Self::H264Mp4 | Self::HevcMp4 => "mp4",
+            Self::ProResMov => "mov",
+        }
+    }
+}
+
+/// 导出任务实时进度与状态
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExportTaskState {
+    pub is_exporting: bool,
+    pub output_path: String,
+    pub preset: ExportPreset,
+    pub progress: f32, // 0.0 ~ 1.0
+    pub current_frame: u64,
+    pub total_frames: u64,
+    pub fps: f32,
+    pub eta_seconds: u32,
+    pub is_completed: bool,
+    pub error_message: Option<String>,
+}
+
+impl Default for ExportTaskState {
+    fn default() -> Self {
+        Self {
+            is_exporting: false,
+            output_path: "output.mp4".into(),
+            preset: ExportPreset::H264Mp4,
+            progress: 0.0,
+            current_frame: 0,
+            total_frames: 1000,
+            fps: 120.0,
+            eta_seconds: 0,
+            is_completed: false,
+            error_message: None,
+        }
+    }
+}
 
 /// 单个分片渲染状态
 #[derive(Debug, Clone, PartialEq, Eq)]
