@@ -694,6 +694,16 @@ impl VideoCutApp {
                 let status = if self.main_ui_state.snapping_enabled { "开启" } else { "关闭" };
                 self.main_ui_state.status_message = Some(format!("磁性时间线吸附已{}", status));
             }
+            "beatsnap" | "beat_snap" | "transientsnap" => {
+                if parts.len() > 1 {
+                    let on = !matches!(parts[1].to_lowercase().as_str(), "off" | "false" | "0" | "disable");
+                    self.main_ui_state.beat_snap_enabled = on;
+                } else {
+                    self.main_ui_state.beat_snap_enabled = !self.main_ui_state.beat_snap_enabled;
+                }
+                let status = if self.main_ui_state.beat_snap_enabled { "开启" } else { "关闭" };
+                self.main_ui_state.status_message = Some(format!("音频节拍瞬态吸附已{}", status));
+            }
             "easing" | "curve" => {
                 if parts.len() == 1 {
                     self.main_ui_state.show_easing_modal = true;
@@ -2557,5 +2567,23 @@ mod tests {
         // 3. 清除所有关键帧 :clearkf
         app.execute_command_line(":clearkf");
         assert!(app.project_state.timeline.tracks[0].clips[0].keyframe_track.is_none());
+    }
+
+    #[test]
+    fn test_beatsnap_commands() {
+        let mut app = VideoCutApp::new_for_test();
+        app.main_ui_state.beat_snap_enabled = false;
+
+        // 1. 开启节拍吸附 :beatsnap on
+        app.execute_command_line(":beatsnap on");
+        assert!(app.main_ui_state.beat_snap_enabled);
+
+        // 2. 关闭节拍吸附 :beatsnap off
+        app.execute_command_line(":beatsnap off");
+        assert!(!app.main_ui_state.beat_snap_enabled);
+
+        // 3. 切换节拍吸附 :beatsnap
+        app.execute_command_line(":beatsnap");
+        assert!(app.main_ui_state.beat_snap_enabled);
     }
 }

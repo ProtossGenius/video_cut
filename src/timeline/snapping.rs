@@ -14,6 +14,8 @@ pub enum SnapTargetKind {
     LocalAnchor,
     /// 播放指针
     Playhead,
+    /// 音频节奏与瞬态打击点
+    AudioTransient,
 }
 
 /// 吸附点信息
@@ -36,6 +38,8 @@ pub struct SnapResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SnapEngine {
     pub enabled: bool,
+    /// 是否开启音频瞬态/节拍吸附 (默认 true)
+    pub beat_snap_enabled: bool,
     /// 屏幕像素吸附容差阈值 (默认 8.0px)
     pub threshold_px: f32,
 }
@@ -44,6 +48,7 @@ impl Default for SnapEngine {
     fn default() -> Self {
         Self {
             enabled: true,
+            beat_snap_enabled: true,
             threshold_px: 8.0,
         }
     }
@@ -54,12 +59,13 @@ impl SnapEngine {
         Self::default()
     }
 
-    /// 在时间线上收集所有潜在对齐点并寻找最近吸附点
-    pub fn find_snap_point(
+    /// 在时间线上收集所有潜在对齐点并寻找最近吸附点（包含音频瞬态）
+    pub fn find_snap_point_with_transients(
         &self,
         target_time: FrameTime,
         timeline: &Timeline,
         global_anchors: &AnchorRegistry,
+        audio_transients: &[FrameTime],
         zoom_level: f32,
     ) -> Option<SnapResult> {
         if !self.enabled || zoom_level <= 0.0 {
@@ -103,6 +109,17 @@ impl SnapEngine {
             });
         }
 
+        // 4. 收集音频节拍瞬态点
+        if self.beat_snap_enabled {
+            for &t in audio_transients {
+                candidates.push(SnapPoint {
+                    time: t,
+                    kind: SnapTargetKind::AudioTransient,
+                    description: format!("音频节拍瞬态 {:.2}s", t.as_seconds()),
+                });
+            }
+        }
+
         // 寻找距离最近且在阈值内的候选点
         let mut best: Option<SnapResult> = None;
         let mut min_dist_px = self.threshold_px;
@@ -122,6 +139,17 @@ impl SnapEngine {
         }
 
         best
+    }
+
+    /// 在时间线上收集所有潜在对齐点并寻找最近吸附点 (向后兼容)
+    pub fn find_snap_point(
+        &self,
+        target_time: FrameTime,
+        timeline: &Timeline,
+        global_anchors: &AnchorRegistry,
+        zoom_level: f32,
+    ) -> Option<SnapResult> {
+        self.find_snap_point_with_transients(target_time, timeline, global_anchors, &[], zoom_level)
     }
 }
 
@@ -169,5 +197,23 @@ mod tests {
         let res = engine.find_snap_point(target, &timeline, &global_anchors, zoom);
 
         assert!(res.is_none());
+    }
+
+    #[test]
+    fn test_snap_engine_finds_audio_transient_beat() {
+        let engine = SnapEngine::default();
+        let timeline = Timeline::new();
+        let global_anchors = AnchorRegistry::new();
+        let transients = vec![FrameTime(2_500_000)]; // 2.5s 处有音频鼓点
+        let zoom = 100.0;
+
+        // 目标时间: 2.53 秒 (差 0.03s = 3px, 小于 8px)
+        let target = FrameTime(2_530_000);
+        let res = engine.find_snap_point_with_transients(target, &timeline, &global_anchors, &transients, zoom);
+
+        assert!(res.is_some());
+        let snap = res.unwrap();
+        assert_eq!(snap.snapped_time, FrameTime(2_500_000));
+        assert_eq!(snap.snap_point.kind, SnapTargetKind::AudioTransient);
     }
 }

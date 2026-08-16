@@ -128,6 +128,37 @@ impl AudioWaveform {
         }
         None
     }
+
+    /// 自动提取波形中的重音节拍与瞬态打击点 (Audio Transient & Beat Onsets)
+    /// 基于短时能量导数与局部极大值检测
+    pub fn detect_transients(&self, threshold: f32) -> Vec<FrameTime> {
+        let mut transients = Vec::new();
+        if self.peaks.len() < 3 || self.us_per_peak == 0 {
+            return transients;
+        }
+
+        let mut prev_rms = self.peaks[0].rms;
+        for i in 1..(self.peaks.len() - 1) {
+            let cur_rms = self.peaks[i].rms;
+            let next_rms = self.peaks[i + 1].rms;
+            let delta = cur_rms - prev_rms;
+
+            // 当能量快速攀升且当前点为局部极大值，且高于阈值时判定为瞬态打击点
+            if delta > threshold && cur_rms >= next_rms && cur_rms > 0.15 {
+                let time_us = i as i64 * self.us_per_peak as i64;
+                // 避免 100ms 内重复触发
+                if let Some(&last) = transients.last() {
+                    if (time_us - last.0).abs() < 100_000 {
+                        prev_rms = cur_rms;
+                        continue;
+                    }
+                }
+                transients.push(FrameTime(time_us));
+            }
+            prev_rms = cur_rms;
+        }
+        transients
+    }
 }
 
 /// 多分辨率音频波形 LOD 金字塔缓存 (Level-of-Detail Pyramid)
@@ -213,5 +244,19 @@ mod tests {
         let next_point = wf.find_next_audible_point(FrameTime(0), 0.1);
         assert!(next_point.is_some());
         assert_eq!(next_point.unwrap(), FrameTime(2_000_000)); // 2.0s
+    }
+
+    #[test]
+    fn test_detect_transients() {
+        // 构建 1s 静音 + 突然爆发瞬态 (0.9) + 1s 平缓
+        let sample_rate = 1000;
+        let mut samples = vec![0.0f32; 1000]; // 1s 静音
+        samples.extend(vec![0.9f32; 50]);     // 50ms 瞬态重音打击
+        samples.extend(vec![0.1f32; 950]);    // 950ms 低音平缓
+
+        let wf = AudioWaveform::from_pcm_samples(&samples, sample_rate, 50); // 50 peaks/sec (20ms/peak)
+        let transients = wf.detect_transients(0.2);
+        assert!(!transients.is_empty());
+        assert!((transients[0].0 - 1_000_000).abs() < 100_000); // 应该在 1.0s 附近检测到打击点
     }
 }

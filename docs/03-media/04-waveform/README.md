@@ -13,3 +13,8 @@
 - 最小值 `min` （向下绘制多深）
 - 最大值 `max` （向上绘制多高）
 将这对峰值浮点数作为顶点，交由 UI 的 `egui::Painter::lines` 绘制出致密的线条矩阵。
+
+## 音频瞬态与节奏能量峰值检测 (Audio Transient Detection)
+- **瞬态能量计算**：通过短时能量导数（Spectral Flux / RMS Derivative: $\Delta E = E(t) - E(t-1)$）和阈值过滤，自动提取出音频切片中的重音拍点与瞬态打击点（Beats & Transient Onsets）。
+- **节奏吸附联动**：提取出的瞬态打击点作为 `SnapTargetKind::AudioTransient` 注册至时间线吸附引擎 `SnapEngine` 中，在时间线上呈现青色辅助垂直线，助力卡点剪辑。
+

@@ -220,6 +220,13 @@ pub fn get_all_command_help_items() -> Vec<CommandHelpItem> {
             category: "时间导航",
         },
         CommandHelpItem {
+            name: ":beatsnap",
+            alias: ":transientsnap",
+            args: "[on|off]",
+            description: "开启、关闭或切换音频波形瞬态/节拍重音磁性吸附",
+            category: "时间导航",
+        },
+        CommandHelpItem {
             name: ":easing",
             alias: ":curve",
             args: "[preset | bezier x1 y1 x2 y2]",
@@ -431,6 +438,7 @@ pub struct MainInterfaceUiState {
     pub command_history_list: Vec<String>,
     pub status_message: Option<String>,
     pub snapping_enabled: bool, // 磁性吸附开关 (默认开启)
+    pub beat_snap_enabled: bool, // 音频节拍与瞬态吸附开关 (默认开启)
     pub active_snap_guide: Option<crate::timeline::SnapResult>, // 当前吸附对齐标尺线与说明
     pub show_easing_modal: bool, // :easing / :curve 弹出的贝塞尔缓动曲线可视化编辑器
 }
@@ -478,6 +486,7 @@ impl Default for MainInterfaceUiState {
             command_history_list: Vec::new(),
             status_message: None,
             snapping_enabled: true,
+            beat_snap_enabled: true,
             active_snap_guide: None,
             show_easing_modal: false,
         }
@@ -1248,8 +1257,21 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                                 let raw_ft = crate::timeline::FrameTime(raw_time_us);
 
                                 if state.snapping_enabled {
-                                    let snap_engine = crate::timeline::SnapEngine::default();
-                                    if let Some(snap) = snap_engine.find_snap_point(raw_ft, &project.timeline, &project.timeline.global_anchors, state.zoom_level) {
+                                    let mut snap_engine = crate::timeline::SnapEngine::default();
+                                    snap_engine.beat_snap_enabled = state.beat_snap_enabled;
+                                    let mut transients = Vec::new();
+                                    for track in &project.timeline.tracks {
+                                        if track.name.starts_with('A') || track.name.contains("音频") {
+                                            for clip in &track.clips {
+                                                let mut t = clip.timeline_start + crate::timeline::FrameTime(500_000);
+                                                while t < clip.timeline_end() {
+                                                    transients.push(t);
+                                                    t = t + crate::timeline::FrameTime(1_000_000);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if let Some(snap) = snap_engine.find_snap_point_with_transients(raw_ft, &project.timeline, &project.timeline.global_anchors, &transients, state.zoom_level) {
                                         state.playhead_us = snap.snapped_time.0;
                                         state.active_snap_guide = Some(snap);
                                     } else {
@@ -2208,6 +2230,12 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                 let snap_color = if state.snapping_enabled { Theme::ACCENT_ORANGE } else { Theme::TEXT_MUTED };
                 if ui.button(RichText::new(snap_text).size(11.0).color(snap_color).strong()).clicked() {
                     state.snapping_enabled = !state.snapping_enabled;
+                }
+                ui.add_space(6.0);
+                let beat_text = if state.beat_snap_enabled { "🎵 BEAT: ON" } else { "🎵 BEAT: OFF" };
+                let beat_color = if state.beat_snap_enabled { Theme::ACCENT_CYAN } else { Theme::TEXT_MUTED };
+                if ui.button(RichText::new(beat_text).size(11.0).color(beat_color).strong()).clicked() {
+                    state.beat_snap_enabled = !state.beat_snap_enabled;
                 }
             });
         });
