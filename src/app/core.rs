@@ -2,6 +2,7 @@ use eframe::{egui, Frame};
 use crate::gui::Page;
 use crate::keybinding::{KeymapTrie, KeyParser, KeyEvent, Action, Mode, ParseResult};
 use crate::gui::file_browser::FileBrowserState;
+use crate::gui::editor::EditorState;
 use crate::project::ProjectState;
 use crate::timeline::{Track, TrackId, Clip, ClipId, AssetId, FrameTime};
 
@@ -12,6 +13,7 @@ pub struct VideoCutApp {
     file_browser_state: FileBrowserState,
     show_file_browser: bool,
     project_state: ProjectState,
+    editor_state: EditorState,
 }
 
 impl VideoCutApp {
@@ -63,6 +65,7 @@ impl VideoCutApp {
             file_browser_state: FileBrowserState::default(),
             show_file_browser: false,
             project_state,
+            editor_state: EditorState::default(),
         }
     }
 }
@@ -157,7 +160,7 @@ impl eframe::App for VideoCutApp {
             match self.current_page {
                 Page::Navigation => crate::gui::navigation::show(ui),
                 Page::MainInterface => crate::gui::main_interface::show(ui, &mut self.project_state),
-                Page::Editor => crate::gui::editor::show(ui),
+                Page::Editor => crate::gui::editor::show(ui, &mut self.editor_state),
             }
         });
 
