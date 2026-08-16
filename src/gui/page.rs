@@ -2,7 +2,6 @@
 pub enum Page {
     Navigation,
     MainInterface,
-    FileBrowser,
     Editor,
 }
 

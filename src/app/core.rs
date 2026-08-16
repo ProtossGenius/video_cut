@@ -2,12 +2,16 @@ use eframe::{egui, Frame};
 use crate::gui::Page;
 use crate::keybinding::{KeymapTrie, KeyParser, KeyEvent, Action, Mode, ParseResult};
 use crate::gui::file_browser::FileBrowserState;
+use crate::project::ProjectState;
+use crate::timeline::{Track, TrackId, Clip, ClipId, AssetId, FrameTime};
 
 pub struct VideoCutApp {
     current_page: Page,
     key_parser: KeyParser,
     mode: Mode,
     file_browser_state: FileBrowserState,
+    show_file_browser: bool,
+    project_state: ProjectState,
 }
 
 impl VideoCutApp {
@@ -26,12 +30,39 @@ impl VideoCutApp {
         trie.insert(&[KeyEvent::new("J")], Action::LuaCommand("down".into()));
         trie.insert(&[KeyEvent::new("Enter")], Action::LuaCommand("enter".into()));
         trie.insert(&[KeyEvent::new("Backspace")], Action::LuaCommand("back".into()));
+        trie.insert(&[KeyEvent::new("Escape")], Action::LuaCommand("close".into()));
+
+        let mut project_state = ProjectState::new("My First Video");
+        
+        let mut track1 = Track::new(TrackId(1), "V1 - 主视频");
+        track1.add_clip(Clip::new(
+            ClipId(1), "风景素材.mp4".into(), AssetId(1), 
+            FrameTime(1_000_000), // 1s
+            FrameTime(5_000_000)  // 5s duration
+        ));
+        track1.add_clip(Clip::new(
+            ClipId(2), "转场.mp4".into(), AssetId(2), 
+            FrameTime(6_500_000), // 6.5s
+            FrameTime(2_000_000)  // 2s duration
+        ));
+
+        let mut track2 = Track::new(TrackId(2), "A1 - 背景音乐");
+        track2.add_clip(Clip::new(
+            ClipId(3), "bgm.mp3".into(), AssetId(3), 
+            FrameTime(0),         // 0s
+            FrameTime(12_000_000) // 12s duration
+        ));
+
+        project_state.timeline.add_track(track1);
+        project_state.timeline.add_track(track2);
 
         Self {
             current_page: Page::Navigation,
             key_parser: KeyParser::new(trie),
             mode: Mode::Normal,
             file_browser_state: FileBrowserState::default(),
+            show_file_browser: false,
+            project_state,
         }
     }
 }
@@ -83,25 +114,26 @@ impl eframe::App for VideoCutApp {
                                 match cmd.as_str() {
                                     "nav" => self.current_page = Page::Navigation,
                                     "main" => self.current_page = Page::MainInterface,
-                                    "file" => self.current_page = Page::FileBrowser,
+                                    "file" => self.show_file_browser = !self.show_file_browser,
                                     "editor" => self.current_page = Page::Editor,
+                                    "close" => self.show_file_browser = false,
                                     "up" => {
-                                        if self.current_page == Page::FileBrowser {
+                                        if self.show_file_browser {
                                             self.file_browser_state.move_up();
                                         }
                                     }
                                     "down" => {
-                                        if self.current_page == Page::FileBrowser {
+                                        if self.show_file_browser {
                                             self.file_browser_state.move_down();
                                         }
                                     }
                                     "enter" => {
-                                        if self.current_page == Page::FileBrowser {
+                                        if self.show_file_browser {
                                             self.file_browser_state.enter_dir();
                                         }
                                     }
                                     "back" => {
-                                        if self.current_page == Page::FileBrowser {
+                                        if self.show_file_browser {
                                             self.file_browser_state.go_up_dir();
                                         }
                                     }
@@ -124,10 +156,13 @@ impl eframe::App for VideoCutApp {
         egui::CentralPanel::default().show(ui, |ui| {
             match self.current_page {
                 Page::Navigation => crate::gui::navigation::show(ui),
-                Page::MainInterface => crate::gui::main_interface::show(ui),
-                Page::FileBrowser => crate::gui::file_browser::show(ui, &mut self.file_browser_state),
+                Page::MainInterface => crate::gui::main_interface::show(ui, &mut self.project_state),
                 Page::Editor => crate::gui::editor::show(ui),
             }
         });
+
+        if self.show_file_browser {
+            crate::gui::file_browser::show(ui.ctx(), &mut self.file_browser_state, &mut self.show_file_browser);
+        }
     }
 }

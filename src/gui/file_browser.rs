@@ -135,96 +135,110 @@ impl FileBrowserState {
     }
 }
 
-pub fn show(ui: &mut egui::Ui, state: &mut FileBrowserState) {
-    ui.heading("文件导入与浏览");
-    ui.label(format!("当前目录: {}", state.current_dir.display()));
-    ui.separator();
+pub fn show(ctx: &egui::Context, state: &mut FileBrowserState, is_open: &mut bool) {
+    let mut open = *is_open;
+    egui::Window::new("文件导入与浏览")
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(true)
+        .default_size([800.0, 600.0])
+        .show(ctx, |ui| {
+            ui.label(format!("当前目录: {}", state.current_dir.display()));
+            ui.separator();
 
-    let available_width = ui.available_width();
-    // left: 25%, center: 40%, right: 35%
-    let left_w = available_width * 0.25;
-    let center_w = available_width * 0.40;
-    let right_w = available_width * 0.35;
+            let available_width = ui.available_width();
+            // left: 25%, center: 40%, right: 35%
+            let left_w = available_width * 0.25;
+            let center_w = available_width * 0.40;
+            let right_w = available_width * 0.35;
 
-    ui.horizontal(|ui| {
-        // 第一列：父目录
-        ui.allocate_ui(egui::vec2(left_w, ui.available_height()), |ui| {
-            egui::ScrollArea::vertical().id_salt("parent_scroll").show(ui, |ui| {
-                for entry in &state.parent_entries {
-                    let mut text = egui::RichText::new(format!("{} {}", if entry.is_dir { "📁" } else { "📄" }, entry.name));
-                    if entry.is_dir {
-                        text = text.strong();
-                    }
-                    if entry.path == state.current_dir {
-                        text = text.background_color(egui::Color32::from_rgb(50, 50, 100)).color(egui::Color32::WHITE);
-                    }
-                    ui.label(text);
-                }
-            });
-        });
+            ui.horizontal(|ui| {
+                // 第一列：父目录
+                ui.allocate_ui(egui::vec2(left_w, ui.available_height()), |ui| {
+                    ui.vertical(|ui| {
+                        egui::ScrollArea::vertical().id_salt("parent_scroll").show(ui, |ui| {
+                            for entry in &state.parent_entries {
+                                let mut text = egui::RichText::new(format!("{} {}", if entry.is_dir { "📁" } else { "📄" }, entry.name));
+                                if entry.is_dir {
+                                    text = text.strong();
+                                }
+                                if entry.path == state.current_dir {
+                                    text = text.background_color(egui::Color32::from_rgb(50, 50, 100)).color(egui::Color32::WHITE);
+                                }
+                                ui.label(text);
+                            }
+                        });
+                    });
+                });
 
-        ui.separator();
+                ui.separator();
 
-        // 第二列：当前目录
-        ui.allocate_ui(egui::vec2(center_w, ui.available_height()), |ui| {
-            let mut new_selected_index = None;
-            let mut do_enter_dir = false;
+                // 第二列：当前目录
+                ui.allocate_ui(egui::vec2(center_w, ui.available_height()), |ui| {
+                    ui.vertical(|ui| {
+                        let mut new_selected_index = None;
+                        let mut do_enter_dir = false;
 
-            egui::ScrollArea::vertical().id_salt("current_scroll").show(ui, |ui| {
-                for (i, entry) in state.entries.iter().enumerate() {
-                    let mut text = egui::RichText::new(format!("{} {}", if entry.is_dir { "📁" } else { "📄" }, entry.name)).size(16.0);
-                    if entry.is_dir {
-                        text = text.strong();
-                    }
-                    let is_selected = i == state.selected_index;
-                    if is_selected {
-                        text = text.background_color(egui::Color32::from_rgb(80, 120, 220)).color(egui::Color32::WHITE);
-                    }
-                    
-                    let resp = ui.add(egui::Label::new(text).sense(egui::Sense::click()));
-                    if resp.clicked() {
-                        new_selected_index = Some(i);
-                    }
-                    if resp.double_clicked() && entry.is_dir {
-                        do_enter_dir = true;
-                    }
-                    
-                    if is_selected {
-                        resp.scroll_to_me(Some(egui::Align::Center));
-                    }
-                }
-            });
+                        egui::ScrollArea::vertical().id_salt("current_scroll").show(ui, |ui| {
+                            for (i, entry) in state.entries.iter().enumerate() {
+                                let mut text = egui::RichText::new(format!("{} {}", if entry.is_dir { "📁" } else { "📄" }, entry.name)).size(16.0);
+                                if entry.is_dir {
+                                    text = text.strong();
+                                }
+                                let is_selected = i == state.selected_index;
+                                if is_selected {
+                                    text = text.background_color(egui::Color32::from_rgb(80, 120, 220)).color(egui::Color32::WHITE);
+                                }
+                                
+                                let resp = ui.add(egui::Label::new(text).sense(egui::Sense::click()));
+                                if resp.clicked() {
+                                    new_selected_index = Some(i);
+                                }
+                                if resp.double_clicked() && entry.is_dir {
+                                    do_enter_dir = true;
+                                }
+                                
+                                if is_selected {
+                                    resp.scroll_to_me(Some(egui::Align::Center));
+                                }
+                            }
+                        });
 
-            if let Some(i) = new_selected_index {
-                state.selected_index = i;
-                state.update_preview();
-            }
-            if do_enter_dir {
-                state.enter_dir();
-            }
-        });
-
-        ui.separator();
-
-        // 第三列：预览
-        ui.allocate_ui(egui::vec2(right_w, ui.available_height()), |ui| {
-            if let Some(selected) = state.entries.get(state.selected_index) {
-                if selected.is_dir {
-                    ui.heading("文件夹预览");
-                    ui.separator();
-                    egui::ScrollArea::vertical().id_salt("preview_scroll").show(ui, |ui| {
-                        for entry in &state.preview_entries {
-                            let text = format!("{} {}", if entry.is_dir { "📁" } else { "📄" }, entry.name);
-                            ui.label(text);
+                        if let Some(i) = new_selected_index {
+                            state.selected_index = i;
+                            state.update_preview();
+                        }
+                        if do_enter_dir {
+                            state.enter_dir();
                         }
                     });
-                } else {
-                    ui.heading("文件预览");
-                    ui.separator();
-                    ui.label("这里将使用 ffmpeg-next 提取第一帧并渲染。");
-                    ui.label(format!("路径: {}", selected.path.display()));
-                }
-            }
+                });
+
+                ui.separator();
+
+                // 第三列：预览
+                ui.allocate_ui(egui::vec2(right_w, ui.available_height()), |ui| {
+                    ui.vertical(|ui| {
+                        if let Some(selected) = state.entries.get(state.selected_index) {
+                            if selected.is_dir {
+                                ui.heading("文件夹预览");
+                                ui.separator();
+                                egui::ScrollArea::vertical().id_salt("preview_scroll").show(ui, |ui| {
+                                    for entry in &state.preview_entries {
+                                        let text = format!("{} {}", if entry.is_dir { "📁" } else { "📄" }, entry.name);
+                                        ui.label(text);
+                                    }
+                                });
+                            } else {
+                                ui.heading("文件预览");
+                                ui.separator();
+                                ui.label("这里将使用 ffmpeg-next 提取第一帧并渲染。");
+                                ui.label(format!("路径: {}", selected.path.display()));
+                            }
+                        }
+                    });
+                });
+            });
         });
-    });
+    *is_open = open;
 }
