@@ -270,6 +270,7 @@ impl EditorCommand for MergeClipsCommand {
             transform_flip_v: false,
             transform_offset: [0.0, 0.0],
             color_grading: crate::effects::ColorGradingParams::default(),
+            transition_out: None,
         };
 
         track.clips.retain(|c| !self.clip_ids.contains(&c.id));
@@ -396,6 +397,7 @@ impl EditorCommand for MergeCutCommand {
             transform_flip_v: false,
             transform_offset: [0.0, 0.0],
             color_grading: crate::effects::ColorGradingParams::default(),
+            transition_out: None,
         };
 
         remaining_clips.push(new_cut_clip);

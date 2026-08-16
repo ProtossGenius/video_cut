@@ -91,6 +91,8 @@ pub struct Clip {
     pub transform_offset: [f32; 2],
     /// 颜色分级与 LUT 预设参数
     pub color_grading: crate::effects::ColorGradingParams,
+    /// 尾部接缝转场效果 (Transition to next adjacent clip)
+    pub transition_out: Option<crate::effects::Transition>,
 }
 
 impl Clip {
@@ -120,6 +122,7 @@ impl Clip {
             transform_flip_v: false,
             transform_offset: [0.0, 0.0],
             color_grading: crate::effects::ColorGradingParams::default(),
+            transition_out: None,
         }
     }
 
@@ -173,6 +176,11 @@ impl Clip {
 
     pub fn reset_color_grading(&mut self) {
         self.color_grading.reset();
+    }
+
+    pub fn with_transition_out(mut self, transition: Option<crate::effects::Transition>) -> Self {
+        self.transition_out = transition;
+        self
     }
 
     /// 计算切片在指定相对时间点 (相对于切片起始点) 的淡入淡出音量增益 (0.0 ~ 1.0)

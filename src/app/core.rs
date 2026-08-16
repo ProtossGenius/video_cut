@@ -536,6 +536,28 @@ impl VideoCutApp {
                     }
                 }
             }
+            "transition" | "trans" => {
+                let type_str = parts.get(1).copied().unwrap_or("dissolve");
+                let track_idx = self.main_ui_state.selected_track_idx;
+                if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                    let playhead = FrameTime(self.main_ui_state.playhead_us);
+                    if let Some(clip) = track.clips.iter_mut().find(|c| {
+                        playhead >= c.timeline_start && playhead <= c.timeline_end()
+                    }) {
+                        if type_str.eq_ignore_ascii_case("none") || type_str.eq_ignore_ascii_case("remove") || type_str.eq_ignore_ascii_case("clear") {
+                            clip.transition_out = None;
+                            self.main_ui_state.status_message = Some(format!("切片 '{}' 尾部转场已清除", clip.name));
+                        } else if let Some(trans_type) = crate::effects::TransitionType::from_str_loose(type_str) {
+                            let dur_secs: f64 = parts.get(2).and_then(|s| s.trim_end_matches('s').parse().ok()).unwrap_or(1.0);
+                            let transition = crate::effects::Transition::new(trans_type, dur_secs);
+                            clip.transition_out = Some(transition);
+                            self.main_ui_state.status_message = Some(format!("切片 '{}' 已添加尾部转场: {} ({:.1}s)", clip.name, trans_type.name(), dur_secs));
+                        } else {
+                            self.main_ui_state.status_message = Some(format!("未知转场类型: '{}'", type_str));
+                        }
+                    }
+                }
+            }
             "vol" | "volume" => {
                 if parts.len() > 1 {
                     if let Ok(v) = parts[1].parse::<f32>() {
@@ -2015,5 +2037,32 @@ mod tests {
         assert_eq!(cg.saturation, 1.0);
         assert_eq!(cg.temperature, 0.0);
         assert_eq!(cg.lut_preset, crate::effects::LutPreset::None);
+    }
+
+    #[test]
+    fn test_transition_commands() {
+        let mut app = VideoCutApp::new_for_test();
+        let track = app.project_state.timeline.tracks.first_mut().unwrap();
+        track.clips.clear();
+        let clip = crate::timeline::Clip::new(crate::timeline::ClipId(1), "scene1.mp4".into(), crate::timeline::AssetId(1), FrameTime(0), FrameTime(10_000_000));
+        track.add_clip(clip);
+
+        app.main_ui_state.playhead_us = 5_000_000;
+
+        // 1. 添加 1.2s 交叉溶解转场 :transition dissolve 1.2
+        app.execute_command_line(":transition dissolve 1.2");
+        let t1 = app.project_state.timeline.tracks[0].clips[0].transition_out.unwrap();
+        assert_eq!(t1.transition_type, crate::effects::TransitionType::CrossDissolve);
+        assert_eq!(t1.duration, FrameTime(1_200_000));
+
+        // 2. 更改为 0.8s 左划像转场 :transition wipe_left 0.8
+        app.execute_command_line(":transition wipe_left 0.8");
+        let t2 = app.project_state.timeline.tracks[0].clips[0].transition_out.unwrap();
+        assert_eq!(t2.transition_type, crate::effects::TransitionType::WipeLeft);
+        assert_eq!(t2.duration, FrameTime(800_000));
+
+        // 3. 清除转场 :transition none
+        app.execute_command_line(":transition none");
+        assert!(app.project_state.timeline.tracks[0].clips[0].transition_out.is_none());
     }
 }

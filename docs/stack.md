@@ -81,6 +81,7 @@
 64. [x] **完成任务**：实装切片音量淡入淡出曲线控制 (`:fadein`/`:fadeout`) 与时间线图形包络渲染
 65. [x] **完成任务**：实装视频旋转/翻转/缩放实时交互视口变换控制器 (`:rotate`/`:flip`/`:scale_clip`) 与变换手柄
 66. [x] **完成任务**：实装颜色分级与 LUT 滤镜预设管线 (`:brightness`/`:contrast`/`:saturation`/`:temp`/`:lut`)
+67. [x] **完成任务**：实装视频转场特效管线与交叉溶解/划像引擎 (`:transition [dissolve|wipe_left|wipe_right|dip_black]`)
 
 
 

@@ -171,6 +171,13 @@ pub fn get_all_command_help_items() -> Vec<CommandHelpItem> {
             category: "色彩分级",
         },
         CommandHelpItem {
+            name: ":transition",
+            alias: ":trans",
+            args: "<类型> [时长秒数]",
+            description: "在当前切片尾部接缝处添加视频转场特效 (如 :transition dissolve 1.0)",
+            category: "转场特效",
+        },
+        CommandHelpItem {
             name: ":fadein",
             alias: ":fade_in",
             args: "<秒数/时间>",
@@ -1408,6 +1415,39 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                                         ui.close();
                                     }
                                 });
+                                ui.menu_button("✨ 视频转场特效", |ui| {
+                                    if ui.button("交叉溶解 1.0s (:transition dissolve 1.0)").clicked() {
+                                        state.command_input = ":transition dissolve 1.0".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("左划像 0.8s (:transition wipe_left 0.8)").clicked() {
+                                        state.command_input = ":transition wipe_left 0.8".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("右划像 0.8s (:transition wipe_right 0.8)").clicked() {
+                                        state.command_input = ":transition wipe_right 0.8".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("黑场闪烁 0.5s (:transition dip_black 0.5)").clicked() {
+                                        state.command_input = ":transition dip_black 0.5".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("白场闪烁 0.5s (:transition dip_white 0.5)").clicked() {
+                                        state.command_input = ":transition dip_white 0.5".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    ui.separator();
+                                    if ui.button("清除转场 (:transition none)").clicked() {
+                                        state.command_input = ":transition none".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                });
                                 if ui.button("🏷 添加局部锚点 (m)").clicked() {
                                     state.anchor_mark_session = Some(AnchorMarkSession {
                                         scope: AnchorScope::Local,
@@ -1890,6 +1930,33 @@ fn draw_clip_card(
         );
         // 淡出起始小手柄
         painter.circle_filled(pos2(out_start_x, clip_rect.min.y + 2.0), 3.0, Color32::WHITE);
+    }
+
+    // 如果切片尾部设置了转场特效，在接缝右端绘制转场标志 Badge
+    if let Some(ref trans) = clip.transition_out {
+        let trans_w = ((trans.duration.0 as f32 / us_per_sec) * state.zoom_level).clamp(16.0, 48.0);
+        let trans_rect = Rect::from_min_size(
+            pos2(clip_rect.max.x - trans_w * 0.5, clip_rect.min.y + 4.0),
+            vec2(trans_w, clip_rect.height() - 8.0),
+        );
+        painter.rect_filled(
+            trans_rect,
+            CornerRadius::same(3),
+            Color32::from_rgba_unmultiplied(130, 80, 240, 190),
+        );
+        painter.rect_stroke(
+            trans_rect,
+            CornerRadius::same(3),
+            Stroke::new(1.0, Color32::WHITE),
+            egui::StrokeKind::Outside,
+        );
+        painter.text(
+            trans_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            format!("✨{}", trans.transition_type.short_code()),
+            egui::FontId::proportional(9.0),
+            Color32::WHITE,
+        );
     }
 }
 
