@@ -19,5 +19,5 @@
    2. [x] 搭建项目目录结构 (按照 CODING_GUIDE.md 建立 src 目录)
 3. [x] **当前任务**：初始化项目结构、依赖及编写剩余的设计文档
 4. [x] **完成任务**：实现核心领域模型 (Timeline, Track, Clip, ProjectState) 及撤销重做架构
-5. [ ] **当前任务**：实现快捷键状态机 (Key Trie, Modals) 或启动 GUI 黑盒框架
+5. [ ] **当前任务**：实现快捷键状态机 (Key Trie, Modals) 及指令解析系统
 
