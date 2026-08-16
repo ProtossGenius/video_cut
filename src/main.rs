@@ -28,6 +28,6 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "VideoCut",
         options,
-        Box::new(|_cc| Ok(Box::new(app::VideoCutApp::default()))),
+        Box::new(|cc| Ok(Box::new(app::VideoCutApp::new(cc)))),
     )
 }
