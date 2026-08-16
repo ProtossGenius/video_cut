@@ -878,6 +878,21 @@ impl VideoCutApp {
                 }
                 self.main_ui_state.status_message = Some(format!("已解除 {} 个切片的编组", count));
             }
+            "blend" | "interp" | "interpolation" => {
+                let mode_str = parts.get(1).copied().unwrap_or("linear");
+                if let Some(mode) = crate::effects::FrameInterpolationMode::from_str_loose(mode_str) {
+                    let track_idx = self.main_ui_state.selected_track_idx;
+                    if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                        let playhead = FrameTime(self.main_ui_state.playhead_us);
+                        if let Some(clip) = track.clips.iter_mut().find(|c| {
+                            playhead >= c.timeline_start && playhead <= c.timeline_end()
+                        }) {
+                            clip.interp_mode = mode;
+                            self.main_ui_state.status_message = Some(format!("切片 '{}' 慢动作插帧模式已设置为: {}", clip.name, mode.name()));
+                        }
+                    }
+                }
+            }
             "detach_audio" | "detachaudio" | "split_av" | "splitav" => {
                 let track_idx = self.main_ui_state.selected_track_idx;
                 let track_id_opt = self.project_state.timeline.tracks.get(track_idx).map(|t| t.id);
@@ -2692,5 +2707,28 @@ mod tests {
         // 4. 解除编组 :ungroup
         app.execute_command_line(":ungroup");
         assert!(app.project_state.timeline.tracks[0].clips[0].group_id.is_none());
+    }
+
+    #[test]
+    fn test_frame_interpolation_commands() {
+        let mut app = VideoCutApp::new_for_test();
+        let track = app.project_state.timeline.tracks.first_mut().unwrap();
+        track.clips.clear();
+        let clip = crate::timeline::Clip::new(crate::timeline::ClipId(1), "slowmo.mp4".into(), crate::timeline::AssetId(1), FrameTime(0), FrameTime(10_000_000));
+        track.add_clip(clip);
+
+        app.main_ui_state.playhead_us = 2_000_000;
+
+        // 1. 设置慢动作插帧模式为线性混合 :blend linear
+        app.execute_command_line(":blend linear");
+        assert_eq!(app.project_state.timeline.tracks[0].clips[0].interp_mode, crate::effects::FrameInterpolationMode::LinearBlend);
+
+        // 2. 设置为自适应平滑 :blend adaptive
+        app.execute_command_line(":blend adaptive");
+        assert_eq!(app.project_state.timeline.tracks[0].clips[0].interp_mode, crate::effects::FrameInterpolationMode::MotionAdaptive);
+
+        // 3. 设置为临近截断 :blend nearest
+        app.execute_command_line(":blend nearest");
+        assert_eq!(app.project_state.timeline.tracks[0].clips[0].interp_mode, crate::effects::FrameInterpolationMode::Nearest);
     }
 }

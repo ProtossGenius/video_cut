@@ -60,6 +60,76 @@ impl SpeedProperty {
     }
 }
 
+/// 慢动作重映射与插帧模式 (Frame Interpolation Mode)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+pub enum FrameInterpolationMode {
+    /// 临近截断（Nearest / Frame Repeat）
+    #[default]
+    Nearest,
+    /// 双帧线性交叉混合（Linear Frame Blending）
+    LinearBlend,
+    /// 运动自适应余弦平滑混合（Motion-Adaptive Cosine Blend）
+    MotionAdaptive,
+}
+
+impl FrameInterpolationMode {
+    pub fn from_str_loose(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "nearest" | "repeat" | "none" | "off" | "临近" | "重复" => Some(FrameInterpolationMode::Nearest),
+            "linear" | "blend" | "linear_blend" | "线性" | "混合" => Some(FrameInterpolationMode::LinearBlend),
+            "motion" | "adaptive" | "motion_adaptive" | "cosine" | "自适应" | "余弦" => Some(FrameInterpolationMode::MotionAdaptive),
+            _ => None,
+        }
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            FrameInterpolationMode::Nearest => "临近帧重复 (Nearest)",
+            FrameInterpolationMode::LinearBlend => "双帧线性混合 (Linear Blend)",
+            FrameInterpolationMode::MotionAdaptive => "运动自适应平滑 (Motion Adaptive)",
+        }
+    }
+
+    /// 对两张解码后的 RGBA 帧像素缓冲区进行加权混合插帧计算
+    /// alpha 在 0.0 ~ 1.0 之间
+    pub fn blend_frames(
+        &self,
+        frame_a: &[u8],
+        frame_b: &[u8],
+        alpha: f32,
+        out_buffer: &mut [u8],
+    ) {
+        let alpha = alpha.clamp(0.0, 1.0);
+        let len = frame_a.len().min(frame_b.len()).min(out_buffer.len());
+
+        match self {
+            FrameInterpolationMode::Nearest => {
+                if alpha < 0.5 {
+                    out_buffer[..len].copy_from_slice(&frame_a[..len]);
+                } else {
+                    out_buffer[..len].copy_from_slice(&frame_b[..len]);
+                }
+            }
+            FrameInterpolationMode::LinearBlend => {
+                let w_b = alpha;
+                let w_a = 1.0 - alpha;
+                for i in 0..len {
+                    out_buffer[i] = ((frame_a[i] as f32 * w_a) + (frame_b[i] as f32 * w_b)).round() as u8;
+                }
+            }
+            FrameInterpolationMode::MotionAdaptive => {
+                // 余弦 S 型平滑加权: (1 - cos(alpha * PI)) / 2
+                let smooth_alpha = (1.0 - (alpha * std::f32::consts::PI).cos()) * 0.5;
+                let w_b = smooth_alpha;
+                let w_a = 1.0 - smooth_alpha;
+                for i in 0..len {
+                    out_buffer[i] = ((frame_a[i] as f32 * w_a) + (frame_b[i] as f32 * w_b)).round() as u8;
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -78,5 +148,24 @@ mod tests {
     fn test_invalid_speed() {
         assert!(SpeedProperty::new(0.0).is_err());
         assert!(SpeedProperty::new(-1.5).is_err());
+    }
+
+    #[test]
+    fn test_frame_blending_linear_and_nearest() {
+        let f0 = vec![100u8; 4];
+        let f1 = vec![200u8; 4];
+        let mut out = vec![0u8; 4];
+
+        // 1. 线性插值 alpha=0.5 -> 150
+        FrameInterpolationMode::LinearBlend.blend_frames(&f0, &f1, 0.5, &mut out);
+        assert_eq!(out, vec![150u8; 4]);
+
+        // 2. 临近插值 alpha=0.3 -> f0 (100)
+        FrameInterpolationMode::Nearest.blend_frames(&f0, &f1, 0.3, &mut out);
+        assert_eq!(out, vec![100u8; 4]);
+
+        // 3. 运动自适应余弦平滑插值 alpha=0.5 -> 150
+        FrameInterpolationMode::MotionAdaptive.blend_frames(&f0, &f1, 0.5, &mut out);
+        assert_eq!(out, vec![150u8; 4]);
     }
 }

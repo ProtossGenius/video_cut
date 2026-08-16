@@ -159,6 +159,8 @@ pub struct Clip {
     pub color_tag: ColorTagPreset,
     /// 多切片联动编组 ID (Group ID)
     pub group_id: Option<u64>,
+    /// 慢动作重映射与插帧模式 (Frame Interpolation Mode)
+    pub interp_mode: crate::effects::FrameInterpolationMode,
 }
 
 impl Clip {
@@ -194,6 +196,7 @@ impl Clip {
             keyframe_track: None,
             color_tag: ColorTagPreset::None,
             group_id: None,
+            interp_mode: crate::effects::FrameInterpolationMode::Nearest,
         }
     }
 

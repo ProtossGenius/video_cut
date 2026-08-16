@@ -276,6 +276,7 @@ impl EditorCommand for MergeClipsCommand {
             keyframe_track: None,
             color_tag: crate::timeline::ColorTagPreset::None,
             group_id: None,
+            interp_mode: crate::effects::FrameInterpolationMode::Nearest,
         };
 
         track.clips.retain(|c| !self.clip_ids.contains(&c.id));
@@ -408,6 +409,7 @@ impl EditorCommand for MergeCutCommand {
             keyframe_track: None,
             color_tag: crate::timeline::ColorTagPreset::None,
             group_id: None,
+            interp_mode: crate::effects::FrameInterpolationMode::Nearest,
         };
 
         remaining_clips.push(new_cut_clip);

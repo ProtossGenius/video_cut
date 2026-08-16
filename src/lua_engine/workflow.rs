@@ -221,6 +221,7 @@ impl CutWorkflowEngine {
                                 keyframe_track: None,
                                 color_tag: crate::timeline::ColorTagPreset::None,
                                 group_id: None,
+                                interp_mode: crate::effects::FrameInterpolationMode::Nearest,
                             };
                             track.clips.retain(|c| !clip_ids.contains(&c.id.0));
                             track.add_clip(merged_clip);

@@ -283,6 +283,13 @@ pub fn get_all_command_help_items() -> Vec<CommandHelpItem> {
             category: "切片操作",
         },
         CommandHelpItem {
+            name: ":blend",
+            alias: ":interp",
+            args: "<nearest|linear|adaptive>",
+            description: "设置慢动作回放时的插帧混合模式 (平滑慢动作消除卡顿)",
+            category: "特效控制",
+        },
+        CommandHelpItem {
             name: ":detach_audio",
             alias: ":split_av",
             args: "",
@@ -1990,6 +1997,23 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                                     state.is_command_mode = true;
                                     ui.close();
                                 }
+                                ui.menu_button("⏱ 慢动作插帧模式", |ui| {
+                                    if ui.button("临近帧重复 (:blend nearest)").clicked() {
+                                        state.command_input = ":blend nearest".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("双帧线性混合 (:blend linear)").clicked() {
+                                        state.command_input = ":blend linear".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("运动自适应平滑 (:blend adaptive)").clicked() {
+                                        state.command_input = ":blend adaptive".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                });
                                 if ui.button("🔊 音画分离至新音频轨 (:detach_audio)").clicked() {
                                     state.command_input = ":detach_audio".into();
                                     state.is_command_mode = true;
