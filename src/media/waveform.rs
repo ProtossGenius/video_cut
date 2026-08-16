@@ -130,6 +130,38 @@ impl AudioWaveform {
     }
 }
 
+/// 多分辨率音频波形 LOD 金字塔缓存 (Level-of-Detail Pyramid)
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct WaveformLodPyramid {
+    /// L0: 精细层级 (~480 peaks/sec, 极大放大时查看)
+    pub l0: AudioWaveform,
+    /// L1: 常规层级 (~60 peaks/sec, 标准缩放查看)
+    pub l1: AudioWaveform,
+    /// L2: 概览层级 (~8 peaks/sec, 全景缩略查看)
+    pub l2: AudioWaveform,
+}
+
+impl WaveformLodPyramid {
+    /// 从原始 PCM 样本流生成全套多级波形金字塔缓存
+    pub fn from_pcm_samples(samples: &[f32], sample_rate: u32) -> Self {
+        let l0 = AudioWaveform::from_pcm_samples(samples, sample_rate, 480);
+        let l1 = AudioWaveform::from_pcm_samples(samples, sample_rate, 60);
+        let l2 = AudioWaveform::from_pcm_samples(samples, sample_rate, 8);
+        Self { l0, l1, l2 }
+    }
+
+    /// 根据当前时间线缩放倍率 (像素/秒) 智能选取最优 LOD 层级
+    pub fn select_lod(&self, pixels_per_sec: f32) -> &AudioWaveform {
+        if pixels_per_sec > 200.0 {
+            &self.l0
+        } else if pixels_per_sec > 30.0 {
+            &self.l1
+        } else {
+            &self.l2
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -149,6 +181,24 @@ mod tests {
         assert_eq!(wf.peaks.len(), 100);
         assert!(wf.peaks[0].max_amplitude > 0.7);
         assert!(wf.peaks[0].min_amplitude < -0.7);
+    }
+
+    #[test]
+    fn test_waveform_lod_pyramid_selection() {
+        let sample_rate = 48000;
+        let samples = vec![0.5f32; 48000]; // 1秒音频
+        let pyramid = WaveformLodPyramid::from_pcm_samples(&samples, sample_rate);
+
+        assert_eq!(pyramid.l0.peaks.len(), 480);
+        assert_eq!(pyramid.l1.peaks.len(), 60);
+        assert_eq!(pyramid.l2.peaks.len(), 8);
+
+        // 高缩放率选择 L0
+        assert_eq!(pyramid.select_lod(300.0).peaks.len(), 480);
+        // 中缩放率选择 L1
+        assert_eq!(pyramid.select_lod(80.0).peaks.len(), 60);
+        // 低缩放率选择 L2
+        assert_eq!(pyramid.select_lod(10.0).peaks.len(), 8);
     }
 
     #[test]
