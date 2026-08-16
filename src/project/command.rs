@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use std::collections::VecDeque;
 
 use super::state::ProjectState;
-use crate::timeline::{Clip, ClipId, FrameTime, TrackId};
+use crate::timeline::{Clip, ClipId, FrameTime, Track, TrackId};
 
 /// 编辑器命令 trait，所有的剪辑操作必须实现此 trait
 pub trait EditorCommand: Send + Sync {
@@ -578,6 +578,109 @@ impl EditorCommand for CloseGapsCommand {
     }
 }
 
+/// 8. 视频音画分离命令 (Detach Audio: 将视频切片中的伴音抽取分离为独立的音频轨道切片)
+pub struct DetachAudioCommand {
+    pub source_track_id: TrackId,
+    pub source_clip_id: ClipId,
+    pub derived_audio_clip_id: ClipId,
+    pub target_track_id: Option<TrackId>,
+    pub created_new_track: bool,
+    derived_clip: Option<Clip>,
+}
+
+impl DetachAudioCommand {
+    pub fn new(source_track_id: TrackId, source_clip_id: ClipId, derived_audio_clip_id: ClipId) -> Self {
+        Self {
+            source_track_id,
+            source_clip_id,
+            derived_audio_clip_id,
+            target_track_id: None,
+            created_new_track: false,
+            derived_clip: None,
+        }
+    }
+}
+
+impl EditorCommand for DetachAudioCommand {
+    fn execute(&mut self, state: &mut ProjectState) -> Result<()> {
+        let src_track = state
+            .timeline
+            .track_mut(self.source_track_id)
+            .ok_or_else(|| anyhow!("Source track not found"))?;
+
+        let src_clip = src_track
+            .clips
+            .iter()
+            .find(|c| c.id == self.source_clip_id)
+            .cloned()
+            .ok_or_else(|| anyhow!("Source clip not found"))?;
+
+        // 查找现有的音频轨道（以 'A' 开头或包含 '音频'），若无则创建新音频轨道
+        let existing_audio_track_id = state
+            .timeline
+            .tracks
+            .iter()
+            .find(|t| t.id != self.source_track_id && (t.name.starts_with('A') || t.name.contains("音频") || t.name.to_lowercase().contains("audio")))
+            .map(|t| t.id);
+
+        let target_tid = if let Some(tid) = existing_audio_track_id {
+            self.created_new_track = false;
+            tid
+        } else {
+            let max_id = state.timeline.tracks.iter().map(|t| t.id.0).max().unwrap_or(0);
+            let new_tid = TrackId(max_id + 1);
+            let audio_track = Track::new(new_tid, format!("A{} 音频", state.timeline.tracks.len() + 1));
+            state.timeline.tracks.push(audio_track);
+            self.created_new_track = true;
+            new_tid
+        };
+
+        self.target_track_id = Some(target_tid);
+
+        let mut audio_clip = Clip::new(
+            self.derived_audio_clip_id,
+            format!("[音频] {}", src_clip.name),
+            src_clip.source,
+            src_clip.timeline_start,
+            src_clip.duration(),
+        );
+        audio_clip.source_in = src_clip.source_in;
+        audio_clip.source_out = src_clip.source_out;
+        audio_clip.speed = src_clip.speed;
+        audio_clip.audio_fade_in = src_clip.audio_fade_in;
+        audio_clip.audio_fade_out = src_clip.audio_fade_out;
+
+        self.derived_clip = Some(audio_clip.clone());
+
+        let target_track = state
+            .timeline
+            .track_mut(target_tid)
+            .ok_or_else(|| anyhow!("Target audio track not found"))?;
+
+        target_track.add_clip(audio_clip);
+        Ok(())
+    }
+
+    fn undo(&mut self, state: &mut ProjectState) -> Result<()> {
+        let target_tid = self
+            .target_track_id
+            .ok_or_else(|| anyhow!("No target track recorded for undo"))?;
+
+        let target_track = state
+            .timeline
+            .track_mut(target_tid)
+            .ok_or_else(|| anyhow!("Target track not found"))?;
+
+        target_track.clips.retain(|c| c.id != self.derived_audio_clip_id);
+
+        if self.created_new_track {
+            state.timeline.tracks.retain(|t| t.id != target_tid);
+        }
+
+        Ok(())
+    }
+}
+
 /// 历史栈管理
 pub struct CommandHistory {
     undo_stack: Vec<Box<dyn EditorCommand>>,
@@ -860,5 +963,30 @@ mod tests {
         let t_undo = state.timeline.track(TrackId(1)).unwrap();
         assert_eq!(t_undo.clips[0].timeline_start, FrameTime(2_000_000));
         assert_eq!(t_undo.clips[1].timeline_start, FrameTime(8_000_000));
+    }
+
+    #[test]
+    fn test_detach_audio_and_undo() {
+        let mut state = ProjectState::new("Test Detach Audio");
+        let mut track = Track::new(TrackId(1), "V1");
+        track.add_clip(Clip::new(ClipId(1), "intro.mp4".into(), AssetId(1), FrameTime(2_000_000), FrameTime(5_000_000)));
+        state.timeline.add_track(track);
+
+        let mut history = CommandHistory::new();
+        let cmd = DetachAudioCommand::new(TrackId(1), ClipId(1), ClipId(101));
+        assert!(history.execute(Box::new(cmd), &mut state).is_ok());
+
+        // 自动创建了音频轨道 A2 音频
+        assert_eq!(state.timeline.tracks.len(), 2);
+        let audio_track = &state.timeline.tracks[1];
+        assert_eq!(audio_track.clips.len(), 1);
+        assert_eq!(audio_track.clips[0].id, ClipId(101));
+        assert_eq!(audio_track.clips[0].name, "[音频] intro.mp4");
+        assert_eq!(audio_track.clips[0].timeline_start, FrameTime(2_000_000));
+        assert_eq!(audio_track.clips[0].duration(), FrameTime(5_000_000));
+
+        // 撤销
+        assert!(history.undo(&mut state).is_ok());
+        assert_eq!(state.timeline.tracks.len(), 1);
     }
 }

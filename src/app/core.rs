@@ -253,6 +253,16 @@ impl VideoCutApp {
                     self.main_ui_state.status_message = Some("已执行选区独立切断合并".into());
                 }
             }
+            "undo" | "u" => {
+                if self.command_history.undo(&mut self.project_state).is_ok() {
+                    self.main_ui_state.status_message = Some("已撤销上一步操作".into());
+                }
+            }
+            "redo" | "r" => {
+                if self.command_history.redo(&mut self.project_state).is_ok() {
+                    self.main_ui_state.status_message = Some("已重做操作".into());
+                }
+            }
             "biset" => {
                 let start_us = self
                     .main_ui_state
@@ -741,6 +751,41 @@ impl VideoCutApp {
                     }
                 } else {
                     self.main_ui_state.status_message = Some(format!("未知画中画/分屏预设: {}", preset_str));
+                }
+            }
+            "detach_audio" | "detachaudio" | "split_av" | "splitav" => {
+                let track_idx = self.main_ui_state.selected_track_idx;
+                let track_id_opt = self.project_state.timeline.tracks.get(track_idx).map(|t| t.id);
+                if let Some(track_id) = track_id_opt {
+                    let playhead = FrameTime(self.main_ui_state.playhead_us);
+                    let clip_id_opt = self.project_state.timeline.tracks[track_idx]
+                        .clips
+                        .iter()
+                        .find(|c| playhead >= c.timeline_start && playhead <= c.timeline_end())
+                        .map(|c| (c.id, c.name.clone()));
+
+                    if let Some((clip_id, clip_name)) = clip_id_opt {
+                        let max_clip_id = self.project_state.timeline.tracks.iter()
+                            .flat_map(|t| t.clips.iter())
+                            .map(|c| c.id.0)
+                            .max()
+                            .unwrap_or(0);
+                        let derived_audio_clip_id = crate::timeline::ClipId(max_clip_id + 1);
+
+                        let cmd = Box::new(crate::project::command::DetachAudioCommand::new(
+                            track_id,
+                            clip_id,
+                            derived_audio_clip_id,
+                        ));
+
+                        if self.command_history.execute(cmd, &mut self.project_state).is_ok() {
+                            self.main_ui_state.status_message =
+                                Some(format!("已成功分离切片 '{}' 的伴音轨", clip_name));
+                        }
+                    } else {
+                        self.main_ui_state.status_message =
+                            Some("当前播放头下未找到可分离伴音的切片".into());
+                    }
                 }
             }
             "vol" | "volume" => {
@@ -2367,5 +2412,31 @@ mod tests {
         let clip3 = &app.project_state.timeline.tracks[0].clips[0];
         assert_eq!(clip3.transform_scale, [1.0, 1.0]);
         assert_eq!(clip3.transform_offset, [0.0, 0.0]);
+    }
+
+    #[test]
+    fn test_detach_audio_command_execution() {
+        let mut app = VideoCutApp::new_for_test();
+        let track = app.project_state.timeline.tracks.first_mut().unwrap();
+        track.clips.clear();
+        let clip = crate::timeline::Clip::new(crate::timeline::ClipId(1), "vlog.mp4".into(), crate::timeline::AssetId(1), FrameTime(0), FrameTime(10_000_000));
+        track.add_clip(clip);
+
+        app.main_ui_state.playhead_us = 2_000_000;
+
+        // 执行 :detach_audio
+        app.execute_command_line(":detach_audio");
+
+        // 验证音画分离，派生了音频轨道与音频切片
+        assert_eq!(app.project_state.timeline.tracks.len(), 2);
+        let audio_track = &app.project_state.timeline.tracks[1];
+        assert_eq!(audio_track.clips.len(), 1);
+        assert_eq!(audio_track.clips[0].name, "[音频] vlog.mp4");
+        assert_eq!(audio_track.clips[0].timeline_start, FrameTime(0));
+        assert_eq!(audio_track.clips[0].duration(), FrameTime(10_000_000));
+
+        // 撤销 :u
+        app.execute_command_line(":u");
+        assert_eq!(app.project_state.timeline.tracks.len(), 1);
     }
 }

@@ -234,6 +234,13 @@ pub fn get_all_command_help_items() -> Vec<CommandHelpItem> {
             category: "特效控制",
         },
         CommandHelpItem {
+            name: ":detach_audio",
+            alias: ":split_av",
+            args: "",
+            description: "将当前切片的伴音抽取分离为独立的音频轨道切片",
+            category: "音频控制",
+        },
+        CommandHelpItem {
             name: ":fadein",
             alias: ":fade_in",
             args: "<秒数/时间>",
@@ -1753,6 +1760,11 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                                         ui.close();
                                     }
                                 });
+                                if ui.button("🔊 音画分离至新音频轨 (:detach_audio)").clicked() {
+                                    state.command_input = ":detach_audio".into();
+                                    state.is_command_mode = true;
+                                    ui.close();
+                                }
                                 if ui.button("🏷 添加局部锚点 (m)").clicked() {
                                     state.anchor_mark_session = Some(AnchorMarkSession {
                                         scope: AnchorScope::Local,
