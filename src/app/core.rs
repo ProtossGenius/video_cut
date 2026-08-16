@@ -281,27 +281,10 @@ impl VideoCutApp {
                     Some("已开启二分法决策定位模式 (:biset)".into());
             }
             "Marks" | "marks" => {
-                self.main_ui_state.history_output.clear();
-                self.main_ui_state
-                    .history_output
-                    .push("=== 项目锚点清单 (Marks) ===".into());
-                for pt in &self.project_state.timeline.global_anchors.anchors {
-                    self.main_ui_state.history_output.push(format!(
-                        "[全局] '{}' -> {} ({})",
-                        pt.name, pt.position, pt.description
-                    ));
-                }
-                for track in &self.project_state.timeline.tracks {
-                    for clip in &track.clips {
-                        for (name, pt) in &clip.anchors {
-                            self.main_ui_state.history_output.push(format!(
-                                "[切片:{}] '{}' -> {} ({})",
-                                clip.name, name, pt.position, pt.description
-                            ));
-                        }
-                    }
-                }
-                self.main_ui_state.show_message_window = true;
+                self.main_ui_state.show_marks_manager_modal = true;
+                self.main_ui_state.marks_manager_search.clear();
+                self.main_ui_state.status_message =
+                    Some("已开启锚点管理与描述编辑面板 (:Marks)".into());
             }
             "message" => {
                 self.main_ui_state.show_message_window = true;
@@ -601,6 +584,14 @@ impl eframe::App for VideoCutApp {
                                     self.main_ui_state.is_command_mode = true;
                                     self.main_ui_state.show_command_help_modal = false;
                                 }
+                            }
+                        }
+                        // 0.1 如果处于锚点管理与描述编辑弹窗 (:Marks / :marks)
+                        else if self.main_ui_state.show_marks_manager_modal {
+                            if i.key_pressed(egui::Key::Escape) {
+                                self.main_ui_state.show_marks_manager_modal = false;
+                            } else if i.key_pressed(egui::Key::Slash) || typed_texts.iter().any(|t| t == "／" || t == "/") {
+                                self.main_ui_state.marks_manager_search_active = true;
                             }
                         }
                         // 1. 如果处于锚点标记会话 (AnchorMarkSession - m/M)
@@ -1251,8 +1242,7 @@ mod tests {
         let mut app = VideoCutApp::new_for_test();
         // 中文冒号执行 Marks
         app.execute_command_line("：Marks");
-        assert!(app.main_ui_state.show_message_window);
-        assert!(!app.main_ui_state.history_output.is_empty());
+        assert!(app.main_ui_state.show_marks_manager_modal);
     }
 
     #[test]

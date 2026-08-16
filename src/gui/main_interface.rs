@@ -177,6 +177,10 @@ pub struct MainInterfaceUiState {
     pub command_help_search: String,
     pub command_help_selected_idx: usize,
     pub command_help_search_active: bool,
+    pub show_marks_manager_modal: bool, // :Marks / :marks 弹出的交互式锚点管理弹窗
+    pub marks_manager_search: String,
+    pub marks_manager_selected_idx: usize,
+    pub marks_manager_search_active: bool,
     pub command_input: String,
     pub is_command_mode: bool,
     pub media_search: String,
@@ -206,6 +210,10 @@ impl Default for MainInterfaceUiState {
             command_help_search: String::new(),
             command_help_selected_idx: 0,
             command_help_search_active: false,
+            show_marks_manager_modal: false,
+            marks_manager_search: String::new(),
+            marks_manager_selected_idx: 0,
+            marks_manager_search_active: false,
             command_input: String::new(),
             is_command_mode: false,
             media_search: String::new(),
@@ -1262,6 +1270,11 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
     if state.show_command_help_modal {
         draw_command_help_modal(ui, state);
     }
+
+    // 9. 浮动独立锚点管理与描述编辑面板 (Marks Manager Modal - :Marks / :marks 唤出)
+    if state.show_marks_manager_modal {
+        draw_marks_manager_modal(ui, project, state);
+    }
 }
 
 /// 绘制单个剪辑卡片
@@ -2079,6 +2092,217 @@ fn draw_command_help_modal(ui: &mut Ui, state: &mut MainInterfaceUiState) {
 
     if close_modal {
         state.show_command_help_modal = false;
+    }
+}
+
+/// 绘制独立锚点管理与描述编辑弹窗 (:Marks / :marks)
+fn draw_marks_manager_modal(
+    ui: &mut Ui,
+    project: &mut ProjectState,
+    state: &mut MainInterfaceUiState,
+) {
+    let full_rect = ui.max_rect();
+    let modal_w = 840.0;
+    let modal_h = 520.0;
+    let modal_rect = Rect::from_center_size(full_rect.center(), vec2(modal_w, modal_h));
+
+    // 1. 半透明暗色遮罩
+    ui.painter().rect_filled(full_rect, 0.0, Color32::from_black_alpha(160));
+
+    // 2. 面板背景与发光青色边框
+    ui.painter().rect_filled(modal_rect, CornerRadius::same(10), Theme::BG_PANEL_ALT);
+    ui.painter().rect_stroke(
+        modal_rect,
+        CornerRadius::same(10),
+        Stroke::new(1.5, Theme::ACCENT_CYAN),
+        egui::StrokeKind::Inside,
+    );
+
+    let mut jump_target_pos = None;
+    let mut close_modal = false;
+    let mut delete_global_anchor = None;
+    let mut delete_local_anchor = None;
+
+    ui.scope_builder(UiBuilder::new().max_rect(modal_rect.shrink(18.0)), |ui| {
+        ui.vertical(|ui| {
+            // 顶栏：标题与关闭按钮
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new("📍 VideoCut 锚点管理与描述编辑 (:Marks)")
+                        .size(16.0)
+                        .strong()
+                        .color(Theme::ACCENT_CYAN),
+                );
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button(RichText::new(" ✕ 关闭 (Esc) ").size(12.0)).clicked() {
+                        close_modal = true;
+                    }
+                });
+            });
+
+            ui.add_space(8.0);
+
+            // 搜索栏
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("🔍 筛选:").color(Theme::ACCENT_CYAN).strong());
+                let search_resp = ui.add(
+                    egui::TextEdit::singleline(&mut state.marks_manager_search)
+                        .hint_text("输入锚点名称/描述关键词 (按 / 聚焦，按 Esc 退出)...")
+                        .desired_width(ui.available_width() - 80.0),
+                );
+                if state.marks_manager_search_active {
+                    search_resp.request_focus();
+                    state.marks_manager_search_active = false;
+                }
+                if !state.marks_manager_search.is_empty() && ui.button("✕ 清空").clicked() {
+                    state.marks_manager_search.clear();
+                }
+            });
+
+            ui.add_space(4.0);
+            ui.label(
+                RichText::new("💡 快捷提示: 点击 [🚀 跳转] 或行内跳转定位 | 直接在描述框修改文本 | 按 / 搜索 | Esc 关闭")
+                    .size(11.0)
+                    .color(Theme::TEXT_MUTED),
+            );
+            ui.separator();
+            ui.add_space(4.0);
+
+            // 表头
+            ui.horizontal(|ui| {
+                ui.add_space(10.0);
+                ui.label(RichText::new("锚点名").strong().size(12.0).color(Theme::ACCENT_CYAN));
+                ui.add_space(50.0);
+                ui.label(RichText::new("时间码").strong().size(12.0).color(Theme::TEXT_SECONDARY));
+                ui.add_space(60.0);
+                ui.label(RichText::new("作用域").strong().size(12.0).color(Theme::ACCENT_PURPLE));
+                ui.add_space(70.0);
+                ui.label(RichText::new("描述 (可直接在此编辑修改)").strong().size(12.0).color(Theme::TEXT_PRIMARY));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.add_space(20.0);
+                    ui.label(RichText::new("操作").strong().size(12.0).color(Theme::TEXT_MUTED));
+                });
+            });
+            ui.separator();
+
+            let query = state.marks_manager_search.trim().to_lowercase();
+
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    let mut rendered_any = false;
+
+                    // 1. 全局锚点
+                    for anchor in project.timeline.global_anchors.anchors.iter_mut() {
+                        let name = &anchor.name;
+                        if !query.is_empty()
+                            && !name.to_lowercase().contains(&query)
+                            && !anchor.description.to_lowercase().contains(&query)
+                            && !"全局".contains(&query)
+                        {
+                            continue;
+                        }
+                        rendered_any = true;
+
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new(name).strong().monospace().color(Theme::ACCENT_CYAN));
+                            ui.add_space(10.0);
+                            ui.label(RichText::new(format_timecode(anchor.position.0)).monospace().color(Theme::TEXT_SECONDARY));
+                            ui.add_space(10.0);
+                            ui.label(RichText::new("[全局轨道]").color(Theme::ACCENT_PURPLE));
+                            ui.add_space(10.0);
+
+                            // 内联编辑描述
+                            ui.add(egui::TextEdit::singleline(&mut anchor.description).desired_width(280.0));
+
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.button(RichText::new("✕ 删除").color(Theme::ACCENT_ORANGE).size(11.0)).clicked() {
+                                    delete_global_anchor = Some(name.clone());
+                                }
+                                if ui.button(RichText::new("🚀 跳转").color(Theme::ACCENT_CYAN).size(11.0)).clicked() {
+                                    jump_target_pos = Some(anchor.position.0);
+                                }
+                            });
+                        });
+                        ui.separator();
+                    }
+
+                    // 2. 切片局部锚点
+                    for track in &mut project.timeline.tracks {
+                        for clip in &mut track.clips {
+                            for (name, anchor) in clip.anchors.iter_mut() {
+                                if !query.is_empty()
+                                    && !name.to_lowercase().contains(&query)
+                                    && !anchor.description.to_lowercase().contains(&query)
+                                    && !clip.name.to_lowercase().contains(&query)
+                                {
+                                    continue;
+                                }
+                                rendered_any = true;
+                                let abs_pos = clip.timeline_start.0 + anchor.position.0;
+
+                                ui.horizontal(|ui| {
+                                    ui.label(RichText::new(name).strong().monospace().color(Theme::ACCENT_CYAN));
+                                    ui.add_space(10.0);
+                                    ui.label(RichText::new(format_timecode(abs_pos)).monospace().color(Theme::TEXT_SECONDARY));
+                                    ui.add_space(10.0);
+                                    ui.label(RichText::new(format!("[切片:{}]", clip.name)).color(Theme::ACCENT_PURPLE));
+                                    ui.add_space(10.0);
+
+                                    // 内联编辑描述
+                                    ui.add(egui::TextEdit::singleline(&mut anchor.description).desired_width(280.0));
+
+                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                        if ui.button(RichText::new("✕ 删除").color(Theme::ACCENT_ORANGE).size(11.0)).clicked() {
+                                            delete_local_anchor = Some((track.id, clip.id, name.clone()));
+                                        }
+                                        if ui.button(RichText::new("🚀 跳转").color(Theme::ACCENT_CYAN).size(11.0)).clicked() {
+                                            jump_target_pos = Some(abs_pos);
+                                        }
+                                    });
+                                });
+                                ui.separator();
+                            }
+                        }
+                    }
+
+                    if !rendered_any {
+                        ui.add_space(40.0);
+                        ui.vertical_centered(|ui| {
+                            ui.label(
+                                RichText::new("暂无匹配的锚点记录 (在主界面按 m 或 M 添加锚点)")
+                                    .size(14.0)
+                                    .color(Theme::TEXT_MUTED),
+                            );
+                        });
+                    }
+                });
+        });
+    });
+
+    if let Some(name) = delete_global_anchor {
+        project.timeline.global_anchors.anchors.retain(|a| a.name != name);
+        state.status_message = Some(format!("已删除全局锚点 '{}'", name));
+    }
+
+    if let Some((track_id, clip_id, name)) = delete_local_anchor {
+        if let Some(track) = project.timeline.tracks.iter_mut().find(|t| t.id == track_id) {
+            if let Some(clip) = track.clips.iter_mut().find(|c| c.id == clip_id) {
+                clip.anchors.remove(&name);
+                state.status_message = Some(format!("已删除切片局部锚点 '{}'", name));
+            }
+        }
+    }
+
+    if let Some(pos) = jump_target_pos {
+        state.playhead_us = pos;
+        state.status_message = Some(format!("已跳转至锚点: {}", format_timecode(pos)));
+        close_modal = true;
+    }
+
+    if close_modal {
+        state.show_marks_manager_modal = false;
     }
 }
 
