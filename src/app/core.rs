@@ -1,11 +1,13 @@
 use eframe::{egui, Frame};
 use crate::gui::Page;
 use crate::keybinding::{KeymapTrie, KeyParser, KeyEvent, Action, Mode, ParseResult};
+use crate::gui::file_browser::FileBrowserState;
 
 pub struct VideoCutApp {
     current_page: Page,
     key_parser: KeyParser,
     mode: Mode,
+    file_browser_state: FileBrowserState,
 }
 
 impl VideoCutApp {
@@ -19,10 +21,17 @@ impl VideoCutApp {
         trie.insert(&[KeyEvent::new("F")], Action::LuaCommand("file".into()));
         trie.insert(&[KeyEvent::new("E")], Action::LuaCommand("editor".into()));
 
+        // 文件浏览器专用按键
+        trie.insert(&[KeyEvent::new("K")], Action::LuaCommand("up".into()));
+        trie.insert(&[KeyEvent::new("J")], Action::LuaCommand("down".into()));
+        trie.insert(&[KeyEvent::new("Enter")], Action::LuaCommand("enter".into()));
+        trie.insert(&[KeyEvent::new("Backspace")], Action::LuaCommand("back".into()));
+
         Self {
             current_page: Page::Navigation,
             key_parser: KeyParser::new(trie),
             mode: Mode::Normal,
+            file_browser_state: FileBrowserState::default(),
         }
     }
 }
@@ -76,6 +85,26 @@ impl eframe::App for VideoCutApp {
                                     "main" => self.current_page = Page::MainInterface,
                                     "file" => self.current_page = Page::FileBrowser,
                                     "editor" => self.current_page = Page::Editor,
+                                    "up" => {
+                                        if self.current_page == Page::FileBrowser {
+                                            self.file_browser_state.move_up();
+                                        }
+                                    }
+                                    "down" => {
+                                        if self.current_page == Page::FileBrowser {
+                                            self.file_browser_state.move_down();
+                                        }
+                                    }
+                                    "enter" => {
+                                        if self.current_page == Page::FileBrowser {
+                                            self.file_browser_state.enter_dir();
+                                        }
+                                    }
+                                    "back" => {
+                                        if self.current_page == Page::FileBrowser {
+                                            self.file_browser_state.go_up_dir();
+                                        }
+                                    }
                                     _ => {}
                                 }
                             }
@@ -96,7 +125,7 @@ impl eframe::App for VideoCutApp {
             match self.current_page {
                 Page::Navigation => crate::gui::navigation::show(ui),
                 Page::MainInterface => crate::gui::main_interface::show(ui),
-                Page::FileBrowser => crate::gui::file_browser::show(ui),
+                Page::FileBrowser => crate::gui::file_browser::show(ui, &mut self.file_browser_state),
                 Page::Editor => crate::gui::editor::show(ui),
             }
         });
