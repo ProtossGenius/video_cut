@@ -366,6 +366,34 @@ impl VideoCutApp {
             "close_gaps" | "closegaps" => {
                 self.execute_action(crate::keybinding::Action::CloseGaps);
             }
+            "fadein" | "fade_in" => {
+                let secs: f64 = parts.get(1).and_then(|s| s.trim_end_matches('s').parse().ok()).unwrap_or(0.5);
+                let fade_us = FrameTime::from_seconds(secs);
+                let track_idx = self.main_ui_state.selected_track_idx;
+                if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                    let playhead = FrameTime(self.main_ui_state.playhead_us);
+                    if let Some(clip) = track.clips.iter_mut().find(|c| {
+                        playhead >= c.timeline_start && playhead <= c.timeline_end()
+                    }) {
+                        clip.audio_fade_in = fade_us;
+                        self.main_ui_state.status_message = Some(format!("切片 '{}' 音频淡入已设置为 {:.2}s", clip.name, secs));
+                    }
+                }
+            }
+            "fadeout" | "fade_out" => {
+                let secs: f64 = parts.get(1).and_then(|s| s.trim_end_matches('s').parse().ok()).unwrap_or(0.5);
+                let fade_us = FrameTime::from_seconds(secs);
+                let track_idx = self.main_ui_state.selected_track_idx;
+                if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                    let playhead = FrameTime(self.main_ui_state.playhead_us);
+                    if let Some(clip) = track.clips.iter_mut().find(|c| {
+                        playhead >= c.timeline_start && playhead <= c.timeline_end()
+                    }) {
+                        clip.audio_fade_out = fade_us;
+                        self.main_ui_state.status_message = Some(format!("切片 '{}' 音频淡出已设置为 {:.2}s", clip.name, secs));
+                    }
+                }
+            }
             "vol" | "volume" => {
                 if parts.len() > 1 {
                     if let Ok(v) = parts[1].parse::<f32>() {
@@ -1745,5 +1773,34 @@ mod tests {
         let t_closed = app.project_state.timeline.tracks.first().unwrap();
         assert_eq!(t_closed.clips[0].timeline_start, FrameTime(0));
         assert_eq!(t_closed.clips[1].timeline_start, FrameTime(4_000_000));
+    }
+
+    #[test]
+    fn test_audio_fade_in_and_fade_out_commands() {
+        let mut app = VideoCutApp::new_for_test();
+        let track = app.project_state.timeline.tracks.first_mut().unwrap();
+        track.clips.clear();
+        // 1 个 10 秒切片 (0s ~ 10s)
+        let clip = crate::timeline::Clip::new(crate::timeline::ClipId(1), "music.mp3".into(), crate::timeline::AssetId(1), FrameTime(0), FrameTime(10_000_000));
+        track.add_clip(clip);
+
+        app.main_ui_state.playhead_us = 2_000_000;
+        // 1. 设置淡入 1.0 秒
+        app.execute_command_line(":fadein 1.0");
+        let c1 = &app.project_state.timeline.tracks[0].clips[0];
+        assert_eq!(c1.audio_fade_in, FrameTime(1_000_000));
+
+        // 2. 设置淡出 2.0 秒
+        app.execute_command_line(":fadeout 2.0");
+        let c2 = &app.project_state.timeline.tracks[0].clips[0];
+        assert_eq!(c2.audio_fade_out, FrameTime(2_000_000));
+
+        // 3. 验证淡入淡出增益计算 (Fade Gain Calculation)
+        // 0.5s (淡入半程) -> 0.5
+        assert!((c2.calculate_audio_fade_gain(FrameTime(500_000)) - 0.5).abs() < 0.01);
+        // 5.0s (稳定段) -> 1.0
+        assert!((c2.calculate_audio_fade_gain(FrameTime(5_000_000)) - 1.0).abs() < 0.01);
+        // 9.0s (淡出半程，距 10s 剩余 1s，淡出总长 2s) -> 0.5
+        assert!((c2.calculate_audio_fade_gain(FrameTime(9_000_000)) - 0.5).abs() < 0.01);
     }
 }

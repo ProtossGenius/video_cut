@@ -101,6 +101,20 @@ pub fn get_all_command_help_items() -> Vec<CommandHelpItem> {
             category: "切片特效",
         },
         CommandHelpItem {
+            name: ":fadein",
+            alias: ":fade_in",
+            args: "<秒数/时间>",
+            description: "设置当前切片的音频淡入包络时长 (如 :fadein 0.5)",
+            category: "音频控制",
+        },
+        CommandHelpItem {
+            name: ":fadeout",
+            alias: ":fade_out",
+            args: "<秒数/时间>",
+            description: "设置当前切片的音频淡出包络时长 (如 :fadeout 1.0)",
+            category: "音频控制",
+        },
+        CommandHelpItem {
             name: ":vol",
             alias: ":volume",
             args: "<0.0~2.0>",
@@ -1124,6 +1138,35 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                                         ui.close();
                                     }
                                 });
+                                ui.menu_button("🔊 音频淡入淡出", |ui| {
+                                    if ui.button("淡入 0.5 秒 (:fadein 0.5)").clicked() {
+                                        state.command_input = ":fadein 0.5".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("淡入 1.0 秒 (:fadein 1.0)").clicked() {
+                                        state.command_input = ":fadein 1.0".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    ui.separator();
+                                    if ui.button("淡出 0.5 秒 (:fadeout 0.5)").clicked() {
+                                        state.command_input = ":fadeout 0.5".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("淡出 1.0 秒 (:fadeout 1.0)").clicked() {
+                                        state.command_input = ":fadeout 1.0".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    ui.separator();
+                                    if ui.button("清除淡入淡出").clicked() {
+                                        state.command_input = ":fadein 0".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                });
                                 if ui.button("🏷 添加局部锚点 (m)").clicked() {
                                     state.anchor_mark_session = Some(AnchorMarkSession {
                                         scope: AnchorScope::Local,
@@ -1582,6 +1625,30 @@ fn draw_clip_card(
             egui::FontId::monospace(9.5),
             Theme::ACCENT_CYAN,
         );
+    }
+
+    // 绘制音频淡入淡出几何曲线包络蒙版 (Audio Fade Envelopes & Curve Ramps)
+    if clip.audio_fade_in.0 > 0 {
+        let in_w = ((clip.audio_fade_in.0 as f32 / us_per_sec) * state.zoom_level).min(clip_rect.width());
+        // 斜向淡入斜坡线
+        painter.line_segment(
+            [pos2(clip_rect.min.x, clip_rect.max.y), pos2(clip_rect.min.x + in_w, clip_rect.min.y)],
+            Stroke::new(1.5, Color32::from_rgb(255, 230, 100)),
+        );
+        // 淡入顶点小手柄
+        painter.circle_filled(pos2(clip_rect.min.x + in_w, clip_rect.min.y + 2.0), 3.0, Color32::WHITE);
+    }
+
+    if clip.audio_fade_out.0 > 0 {
+        let out_w = ((clip.audio_fade_out.0 as f32 / us_per_sec) * state.zoom_level).min(clip_rect.width());
+        let out_start_x = clip_rect.max.x - out_w;
+        // 斜向淡出斜坡线
+        painter.line_segment(
+            [pos2(out_start_x, clip_rect.min.y), pos2(clip_rect.max.x, clip_rect.max.y)],
+            Stroke::new(1.5, Color32::from_rgb(255, 230, 100)),
+        );
+        // 淡出起始小手柄
+        painter.circle_filled(pos2(out_start_x, clip_rect.min.y + 2.0), 3.0, Color32::WHITE);
     }
 }
 

@@ -75,6 +75,10 @@ pub struct Clip {
     pub z_index: i32,
     /// 播放速度倍率 (默认 1.0)
     pub speed: f32,
+    /// 音频淡入时长 (微秒)
+    pub audio_fade_in: FrameTime,
+    /// 音频淡出时长 (微秒)
+    pub audio_fade_out: FrameTime,
 }
 
 impl Clip {
@@ -96,6 +100,8 @@ impl Clip {
             locked: false,
             z_index: 0,
             speed: 1.0,
+            audio_fade_in: FrameTime::ZERO,
+            audio_fade_out: FrameTime::ZERO,
         }
     }
 
@@ -112,6 +118,32 @@ impl Clip {
     pub fn with_speed(mut self, speed: f32) -> Self {
         self.speed = speed.max(0.01);
         self
+    }
+
+    pub fn with_fade(mut self, fade_in: FrameTime, fade_out: FrameTime) -> Self {
+        self.audio_fade_in = fade_in;
+        self.audio_fade_out = fade_out;
+        self
+    }
+
+    /// 计算切片在指定相对时间点 (相对于切片起始点) 的淡入淡出音量增益 (0.0 ~ 1.0)
+    pub fn calculate_audio_fade_gain(&self, relative_time: FrameTime) -> f32 {
+        let dur = self.duration().0;
+        let t = relative_time.0.clamp(0, dur);
+
+        let in_gain = if self.audio_fade_in.0 > 0 {
+            (t as f32 / self.audio_fade_in.0 as f32).min(1.0)
+        } else {
+            1.0
+        };
+
+        let out_gain = if self.audio_fade_out.0 > 0 {
+            ((dur - t) as f32 / self.audio_fade_out.0 as f32).min(1.0)
+        } else {
+            1.0
+        };
+
+        in_gain.min(out_gain).clamp(0.0, 1.0)
     }
 
     /// 计算切片在时间线上的时长（已考虑速度倍率）

@@ -262,6 +262,8 @@ impl EditorCommand for MergeClipsCommand {
             locked: false,
             z_index: first.z_index,
             speed: 1.0,
+            audio_fade_in: FrameTime::ZERO,
+            audio_fade_out: FrameTime::ZERO,
         };
 
         track.clips.retain(|c| !self.clip_ids.contains(&c.id));
@@ -380,6 +382,8 @@ impl EditorCommand for MergeCutCommand {
             locked: false,
             z_index: 0,
             speed: 1.0,
+            audio_fade_in: FrameTime::ZERO,
+            audio_fade_out: FrameTime::ZERO,
         };
 
         remaining_clips.push(new_cut_clip);
