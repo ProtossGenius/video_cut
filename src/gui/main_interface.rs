@@ -129,6 +129,48 @@ pub fn get_all_command_help_items() -> Vec<CommandHelpItem> {
             category: "切片特效",
         },
         CommandHelpItem {
+            name: ":brightness",
+            alias: "",
+            args: "<-1.0~1.0>",
+            description: "调节当前切片的画面亮度 (如 :brightness 0.15)",
+            category: "色彩分级",
+        },
+        CommandHelpItem {
+            name: ":contrast",
+            alias: "",
+            args: "<0.0~3.0>",
+            description: "调节当前切片的画面对比度 (如 :contrast 1.2)",
+            category: "色彩分级",
+        },
+        CommandHelpItem {
+            name: ":saturation",
+            alias: ":sat",
+            args: "<0.0~3.0>",
+            description: "调节当前切片的色彩饱和度 (如 :saturation 1.4, 0.0 为黑白)",
+            category: "色彩分级",
+        },
+        CommandHelpItem {
+            name: ":temp",
+            alias: ":temperature",
+            args: "<-1.0~1.0>",
+            description: "调节当前切片的色温偏向 (正值偏暖橙，负值偏冷蓝)",
+            category: "色彩分级",
+        },
+        CommandHelpItem {
+            name: ":lut",
+            alias: "",
+            args: "<预设名称>",
+            description: "应用电影级 3D LUT 滤镜预设 (如 :lut teal_orange, :lut cinematic)",
+            category: "色彩分级",
+        },
+        CommandHelpItem {
+            name: ":reset_color",
+            alias: ":resetcolor",
+            args: "",
+            description: "重置当前切片的所有色彩分级与 LUT 滤镜参数",
+            category: "色彩分级",
+        },
+        CommandHelpItem {
             name: ":fadein",
             alias: ":fade_in",
             args: "<秒数/时间>",
@@ -796,6 +838,33 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                             Theme::ACCENT_YELLOW,
                         );
                     }
+
+                    // 色彩分级与 LUT 滤镜角标 Badge
+                    if sel_clip.color_grading.is_active() {
+                        let mut color_badges = Vec::new();
+                        if sel_clip.color_grading.lut_preset != crate::effects::LutPreset::None {
+                            color_badges.push(format!("🎨 LUT: {}", sel_clip.color_grading.lut_preset.name()));
+                        }
+                        if sel_clip.color_grading.brightness.abs() > 0.001 {
+                            color_badges.push(format!("☀ {:+.2}", sel_clip.color_grading.brightness));
+                        }
+                        if (sel_clip.color_grading.contrast - 1.0).abs() > 0.001 {
+                            color_badges.push(format!("◐ {:.2}x", sel_clip.color_grading.contrast));
+                        }
+                        if (sel_clip.color_grading.saturation - 1.0).abs() > 0.001 {
+                            color_badges.push(format!("💧 {:.2}x", sel_clip.color_grading.saturation));
+                        }
+                        if sel_clip.color_grading.temperature.abs() > 0.001 {
+                            color_badges.push(format!("🌡 {:+.2}", sel_clip.color_grading.temperature));
+                        }
+                        painter.text(
+                            gizmo_rect.min + vec2(8.0, 24.0),
+                            egui::Align2::LEFT_TOP,
+                            color_badges.join(" | "),
+                            egui::FontId::monospace(10.0),
+                            Theme::ACCENT_CYAN,
+                        );
+                    }
                 }
             }
 
@@ -1297,6 +1366,44 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                                     }
                                     if ui.button("重置几何变换 (:reset_transform)").clicked() {
                                         state.command_input = ":reset_transform".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                });
+                                ui.menu_button("🎨 颜色分级与滤镜", |ui| {
+                                    if ui.button("鲜艳增强 (:lut vibrant)").clicked() {
+                                        state.command_input = ":lut vibrant".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("暖调电影 (:lut cinematic)").clicked() {
+                                        state.command_input = ":lut cinematic".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("青橙电影 (:lut teal_orange)").clicked() {
+                                        state.command_input = ":lut teal_orange".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("经典黑白 (:lut bw)").clicked() {
+                                        state.command_input = ":lut bw".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("复古胶片 (:lut vintage)").clicked() {
+                                        state.command_input = ":lut vintage".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("冷色科幻 (:lut cool)").clicked() {
+                                        state.command_input = ":lut cool".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    ui.separator();
+                                    if ui.button("重置色彩分级 (:reset_color)").clicked() {
+                                        state.command_input = ":reset_color".into();
                                         state.is_command_mode = true;
                                         ui.close();
                                     }

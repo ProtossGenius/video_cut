@@ -458,6 +458,84 @@ impl VideoCutApp {
                     }
                 }
             }
+            "brightness" => {
+                let val: f32 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0.0);
+                let track_idx = self.main_ui_state.selected_track_idx;
+                if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                    let playhead = FrameTime(self.main_ui_state.playhead_us);
+                    if let Some(clip) = track.clips.iter_mut().find(|c| {
+                        playhead >= c.timeline_start && playhead <= c.timeline_end()
+                    }) {
+                        clip.color_grading.brightness = val.clamp(-1.0, 1.0);
+                        self.main_ui_state.status_message = Some(format!("切片 '{}' 亮度已设置为 {:+.2}", clip.name, clip.color_grading.brightness));
+                    }
+                }
+            }
+            "contrast" => {
+                let val: f32 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(1.0);
+                let track_idx = self.main_ui_state.selected_track_idx;
+                if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                    let playhead = FrameTime(self.main_ui_state.playhead_us);
+                    if let Some(clip) = track.clips.iter_mut().find(|c| {
+                        playhead >= c.timeline_start && playhead <= c.timeline_end()
+                    }) {
+                        clip.color_grading.contrast = val.clamp(0.0, 3.0);
+                        self.main_ui_state.status_message = Some(format!("切片 '{}' 对比度已设置为 {:.2}x", clip.name, clip.color_grading.contrast));
+                    }
+                }
+            }
+            "saturation" | "sat" => {
+                let val: f32 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(1.0);
+                let track_idx = self.main_ui_state.selected_track_idx;
+                if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                    let playhead = FrameTime(self.main_ui_state.playhead_us);
+                    if let Some(clip) = track.clips.iter_mut().find(|c| {
+                        playhead >= c.timeline_start && playhead <= c.timeline_end()
+                    }) {
+                        clip.color_grading.saturation = val.clamp(0.0, 3.0);
+                        self.main_ui_state.status_message = Some(format!("切片 '{}' 饱和度已设置为 {:.2}x", clip.name, clip.color_grading.saturation));
+                    }
+                }
+            }
+            "temp" | "temperature" => {
+                let val: f32 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0.0);
+                let track_idx = self.main_ui_state.selected_track_idx;
+                if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                    let playhead = FrameTime(self.main_ui_state.playhead_us);
+                    if let Some(clip) = track.clips.iter_mut().find(|c| {
+                        playhead >= c.timeline_start && playhead <= c.timeline_end()
+                    }) {
+                        clip.color_grading.temperature = val.clamp(-1.0, 1.0);
+                        self.main_ui_state.status_message = Some(format!("切片 '{}' 色温已设置为 {:+.2}", clip.name, clip.color_grading.temperature));
+                    }
+                }
+            }
+            "lut" => {
+                let preset_str = parts.get(1).copied().unwrap_or("none");
+                let preset = crate::effects::LutPreset::from_str_loose(preset_str).unwrap_or(crate::effects::LutPreset::None);
+                let track_idx = self.main_ui_state.selected_track_idx;
+                if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                    let playhead = FrameTime(self.main_ui_state.playhead_us);
+                    if let Some(clip) = track.clips.iter_mut().find(|c| {
+                        playhead >= c.timeline_start && playhead <= c.timeline_end()
+                    }) {
+                        clip.color_grading.lut_preset = preset;
+                        self.main_ui_state.status_message = Some(format!("切片 '{}' 已应用 LUT 预设: {}", clip.name, preset.name()));
+                    }
+                }
+            }
+            "reset_color" | "resetcolor" => {
+                let track_idx = self.main_ui_state.selected_track_idx;
+                if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                    let playhead = FrameTime(self.main_ui_state.playhead_us);
+                    if let Some(clip) = track.clips.iter_mut().find(|c| {
+                        playhead >= c.timeline_start && playhead <= c.timeline_end()
+                    }) {
+                        clip.reset_color_grading();
+                        self.main_ui_state.status_message = Some(format!("切片 '{}' 色彩分级已重置为默认值", clip.name));
+                    }
+                }
+            }
             "vol" | "volume" => {
                 if parts.len() > 1 {
                     if let Ok(v) = parts[1].parse::<f32>() {
@@ -1899,5 +1977,43 @@ mod tests {
         assert_eq!(c.transform_scale, [1.0, 1.0]);
         assert!(!c.transform_flip_h);
         assert!(!c.transform_flip_v);
+    }
+
+    #[test]
+    fn test_color_grading_commands() {
+        let mut app = VideoCutApp::new_for_test();
+        let track = app.project_state.timeline.tracks.first_mut().unwrap();
+        track.clips.clear();
+        let clip = crate::timeline::Clip::new(crate::timeline::ClipId(1), "scenery.mp4".into(), crate::timeline::AssetId(1), FrameTime(0), FrameTime(10_000_000));
+        track.add_clip(clip);
+
+        app.main_ui_state.playhead_us = 4_000_000;
+
+        // 1. 亮度与对比度测试 :brightness 0.2, :contrast 1.3
+        app.execute_command_line(":brightness 0.2");
+        assert_eq!(app.project_state.timeline.tracks[0].clips[0].color_grading.brightness, 0.2);
+
+        app.execute_command_line(":contrast 1.3");
+        assert_eq!(app.project_state.timeline.tracks[0].clips[0].color_grading.contrast, 1.3);
+
+        // 2. 饱和度与色温测试 :saturation 1.5, :temp -0.3
+        app.execute_command_line(":saturation 1.5");
+        assert_eq!(app.project_state.timeline.tracks[0].clips[0].color_grading.saturation, 1.5);
+
+        app.execute_command_line(":temp -0.3");
+        assert_eq!(app.project_state.timeline.tracks[0].clips[0].color_grading.temperature, -0.3);
+
+        // 3. LUT 预设测试 :lut teal_orange
+        app.execute_command_line(":lut teal_orange");
+        assert_eq!(app.project_state.timeline.tracks[0].clips[0].color_grading.lut_preset, crate::effects::LutPreset::TealOrange);
+
+        // 4. 重置测试 :reset_color
+        app.execute_command_line(":reset_color");
+        let cg = &app.project_state.timeline.tracks[0].clips[0].color_grading;
+        assert_eq!(cg.brightness, 0.0);
+        assert_eq!(cg.contrast, 1.0);
+        assert_eq!(cg.saturation, 1.0);
+        assert_eq!(cg.temperature, 0.0);
+        assert_eq!(cg.lut_preset, crate::effects::LutPreset::None);
     }
 }

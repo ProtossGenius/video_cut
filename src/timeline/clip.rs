@@ -89,6 +89,8 @@ pub struct Clip {
     pub transform_flip_v: bool,
     /// 视口像素偏移 [dx, dy]
     pub transform_offset: [f32; 2],
+    /// 颜色分级与 LUT 预设参数
+    pub color_grading: crate::effects::ColorGradingParams,
 }
 
 impl Clip {
@@ -117,6 +119,7 @@ impl Clip {
             transform_flip_h: false,
             transform_flip_v: false,
             transform_offset: [0.0, 0.0],
+            color_grading: crate::effects::ColorGradingParams::default(),
         }
     }
 
@@ -161,6 +164,15 @@ impl Clip {
         self.transform_flip_h = false;
         self.transform_flip_v = false;
         self.transform_offset = [0.0, 0.0];
+    }
+
+    pub fn with_color_grading(mut self, params: crate::effects::ColorGradingParams) -> Self {
+        self.color_grading = params;
+        self
+    }
+
+    pub fn reset_color_grading(&mut self) {
+        self.color_grading.reset();
     }
 
     /// 计算切片在指定相对时间点 (相对于切片起始点) 的淡入淡出音量增益 (0.0 ~ 1.0)
