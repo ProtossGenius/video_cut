@@ -209,6 +209,11 @@ impl CutWorkflowEngine {
                                 speed: 1.0,
                                 audio_fade_in: FrameTime::ZERO,
                                 audio_fade_out: FrameTime::ZERO,
+                                transform_rotation_deg: 0.0,
+                                transform_scale: [1.0, 1.0],
+                                transform_flip_h: false,
+                                transform_flip_v: false,
+                                transform_offset: [0.0, 0.0],
                             };
                             track.clips.retain(|c| !clip_ids.contains(&c.id.0));
                             track.add_clip(merged_clip);

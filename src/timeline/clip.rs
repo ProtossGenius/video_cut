@@ -79,6 +79,16 @@ pub struct Clip {
     pub audio_fade_in: FrameTime,
     /// 音频淡出时长 (微秒)
     pub audio_fade_out: FrameTime,
+    /// 旋转角度 (度，如 90.0, -45.0)
+    pub transform_rotation_deg: f32,
+    /// 缩放倍率 [scale_x, scale_y] (默认 [1.0, 1.0])
+    pub transform_scale: [f32; 2],
+    /// 水平翻转
+    pub transform_flip_h: bool,
+    /// 垂直翻转
+    pub transform_flip_v: bool,
+    /// 视口像素偏移 [dx, dy]
+    pub transform_offset: [f32; 2],
 }
 
 impl Clip {
@@ -102,6 +112,11 @@ impl Clip {
             speed: 1.0,
             audio_fade_in: FrameTime::ZERO,
             audio_fade_out: FrameTime::ZERO,
+            transform_rotation_deg: 0.0,
+            transform_scale: [1.0, 1.0],
+            transform_flip_h: false,
+            transform_flip_v: false,
+            transform_offset: [0.0, 0.0],
         }
     }
 
@@ -124,6 +139,28 @@ impl Clip {
         self.audio_fade_in = fade_in;
         self.audio_fade_out = fade_out;
         self
+    }
+
+    pub fn with_transform(
+        mut self,
+        rotation_deg: f32,
+        scale: [f32; 2],
+        flip_h: bool,
+        flip_v: bool,
+    ) -> Self {
+        self.transform_rotation_deg = rotation_deg;
+        self.transform_scale = scale;
+        self.transform_flip_h = flip_h;
+        self.transform_flip_v = flip_v;
+        self
+    }
+
+    pub fn reset_transform(&mut self) {
+        self.transform_rotation_deg = 0.0;
+        self.transform_scale = [1.0, 1.0];
+        self.transform_flip_h = false;
+        self.transform_flip_v = false;
+        self.transform_offset = [0.0, 0.0];
     }
 
     /// 计算切片在指定相对时间点 (相对于切片起始点) 的淡入淡出音量增益 (0.0 ~ 1.0)

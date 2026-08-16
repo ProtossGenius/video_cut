@@ -394,6 +394,70 @@ impl VideoCutApp {
                     }
                 }
             }
+            "rotate" => {
+                let deg: f32 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(90.0);
+                let track_idx = self.main_ui_state.selected_track_idx;
+                if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                    let playhead = FrameTime(self.main_ui_state.playhead_us);
+                    if let Some(clip) = track.clips.iter_mut().find(|c| {
+                        playhead >= c.timeline_start && playhead <= c.timeline_end()
+                    }) {
+                        clip.transform_rotation_deg = (clip.transform_rotation_deg + deg) % 360.0;
+                        self.main_ui_state.status_message = Some(format!("切片 '{}' 旋转角度已更新为 {:.0}°", clip.name, clip.transform_rotation_deg));
+                    }
+                }
+            }
+            "flip" => {
+                let mode = parts.get(1).map(|s| s.to_lowercase()).unwrap_or_else(|| "h".into());
+                let track_idx = self.main_ui_state.selected_track_idx;
+                if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                    let playhead = FrameTime(self.main_ui_state.playhead_us);
+                    if let Some(clip) = track.clips.iter_mut().find(|c| {
+                        playhead >= c.timeline_start && playhead <= c.timeline_end()
+                    }) {
+                        match mode.as_str() {
+                            "v" | "vertical" => {
+                                clip.transform_flip_v = !clip.transform_flip_v;
+                                self.main_ui_state.status_message = Some(format!("切片 '{}' 垂直翻转: {}", clip.name, if clip.transform_flip_v { "开启" } else { "关闭" }));
+                            }
+                            "both" => {
+                                clip.transform_flip_h = !clip.transform_flip_h;
+                                clip.transform_flip_v = !clip.transform_flip_v;
+                                self.main_ui_state.status_message = Some(format!("切片 '{}' 双向翻转已切换", clip.name));
+                            }
+                            _ => {
+                                clip.transform_flip_h = !clip.transform_flip_h;
+                                self.main_ui_state.status_message = Some(format!("切片 '{}' 水平翻转: {}", clip.name, if clip.transform_flip_h { "开启" } else { "关闭" }));
+                            }
+                        }
+                    }
+                }
+            }
+            "scale_clip" | "scalepreview" | "scaleclip" => {
+                let scale_factor: f32 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(1.0);
+                let track_idx = self.main_ui_state.selected_track_idx;
+                if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                    let playhead = FrameTime(self.main_ui_state.playhead_us);
+                    if let Some(clip) = track.clips.iter_mut().find(|c| {
+                        playhead >= c.timeline_start && playhead <= c.timeline_end()
+                    }) {
+                        clip.transform_scale = [scale_factor.max(0.1), scale_factor.max(0.1)];
+                        self.main_ui_state.status_message = Some(format!("切片 '{}' 画面缩放已设置为 {:.2}x", clip.name, scale_factor));
+                    }
+                }
+            }
+            "reset_transform" | "resettransform" => {
+                let track_idx = self.main_ui_state.selected_track_idx;
+                if let Some(track) = self.project_state.timeline.tracks.get_mut(track_idx) {
+                    let playhead = FrameTime(self.main_ui_state.playhead_us);
+                    if let Some(clip) = track.clips.iter_mut().find(|c| {
+                        playhead >= c.timeline_start && playhead <= c.timeline_end()
+                    }) {
+                        clip.reset_transform();
+                        self.main_ui_state.status_message = Some(format!("切片 '{}' 几何变换已重置为初始状态", clip.name));
+                    }
+                }
+            }
             "vol" | "volume" => {
                 if parts.len() > 1 {
                     if let Ok(v) = parts[1].parse::<f32>() {
@@ -1802,5 +1866,38 @@ mod tests {
         assert!((c2.calculate_audio_fade_gain(FrameTime(5_000_000)) - 1.0).abs() < 0.01);
         // 9.0s (淡出半程，距 10s 剩余 1s，淡出总长 2s) -> 0.5
         assert!((c2.calculate_audio_fade_gain(FrameTime(9_000_000)) - 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_transform_commands() {
+        let mut app = VideoCutApp::new_for_test();
+        let track = app.project_state.timeline.tracks.first_mut().unwrap();
+        track.clips.clear();
+        let clip = crate::timeline::Clip::new(crate::timeline::ClipId(1), "action.mp4".into(), crate::timeline::AssetId(1), FrameTime(0), FrameTime(10_000_000));
+        track.add_clip(clip);
+
+        app.main_ui_state.playhead_us = 3_000_000;
+
+        // 1. 旋转测试 :rotate 90
+        app.execute_command_line(":rotate 90");
+        assert_eq!(app.project_state.timeline.tracks[0].clips[0].transform_rotation_deg, 90.0);
+
+        // 2. 缩放测试 :scale_clip 1.5
+        app.execute_command_line(":scale_clip 1.5");
+        assert_eq!(app.project_state.timeline.tracks[0].clips[0].transform_scale, [1.5, 1.5]);
+
+        // 3. 翻转测试 :flip h & :flip v
+        app.execute_command_line(":flip h");
+        assert!(app.project_state.timeline.tracks[0].clips[0].transform_flip_h);
+        app.execute_command_line(":flip v");
+        assert!(app.project_state.timeline.tracks[0].clips[0].transform_flip_v);
+
+        // 4. 重置测试 :reset_transform
+        app.execute_command_line(":reset_transform");
+        let c = &app.project_state.timeline.tracks[0].clips[0];
+        assert_eq!(c.transform_rotation_deg, 0.0);
+        assert_eq!(c.transform_scale, [1.0, 1.0]);
+        assert!(!c.transform_flip_h);
+        assert!(!c.transform_flip_v);
     }
 }

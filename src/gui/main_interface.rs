@@ -101,6 +101,34 @@ pub fn get_all_command_help_items() -> Vec<CommandHelpItem> {
             category: "切片特效",
         },
         CommandHelpItem {
+            name: ":rotate",
+            alias: "",
+            args: "<角度>",
+            description: "旋转当前切片画面 (如 :rotate 90, :rotate -45)",
+            category: "切片特效",
+        },
+        CommandHelpItem {
+            name: ":flip",
+            alias: "",
+            args: "[h|v|both]",
+            description: "水平或垂直翻转当前切片画面 (如 :flip h, :flip v)",
+            category: "切片特效",
+        },
+        CommandHelpItem {
+            name: ":scale_clip",
+            alias: ":scaleclip",
+            args: "<倍率>",
+            description: "缩放当前切片画面视口大小 (如 :scale_clip 1.5)",
+            category: "切片特效",
+        },
+        CommandHelpItem {
+            name: ":reset_transform",
+            alias: ":resettransform",
+            args: "",
+            description: "重置当前切片的所有几何变换至初始状态",
+            category: "切片特效",
+        },
+        CommandHelpItem {
             name: ":fadein",
             alias: ":fade_in",
             args: "<秒数/时间>",
@@ -699,6 +727,78 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                 );
             }
 
+            // 视口几何变换控制器 (Viewport Transform Gizmo & Handles)
+            let selected_track_idx = state.selected_track_idx;
+            if let Some(sel_track) = project.timeline.tracks.get(selected_track_idx) {
+                if let Some(sel_clip) = sel_track.clips.iter().find(|c| playhead >= c.timeline_start && playhead <= c.timeline_end()) {
+                    let gizmo_rect = video_inner.shrink(18.0);
+                    // 绘制变换半透明边框
+                    painter.rect_stroke(
+                        gizmo_rect,
+                        CornerRadius::same(4),
+                        Stroke::new(1.5, Color32::from_rgba_unmultiplied(80, 200, 255, 200)),
+                        egui::StrokeKind::Outside,
+                    );
+
+                    // 绘制 8 个缩放锚点手柄 (Corners & Edge Centers)
+                    let handle_size = vec2(6.0, 6.0);
+                    let handle_pts = [
+                        gizmo_rect.min, // 左上
+                        pos2(gizmo_rect.center().x, gizmo_rect.min.y), // 上中
+                        pos2(gizmo_rect.max.x, gizmo_rect.min.y), // 右上
+                        pos2(gizmo_rect.min.x, gizmo_rect.center().y), // 左中
+                        pos2(gizmo_rect.max.x, gizmo_rect.center().y), // 右中
+                        pos2(gizmo_rect.min.x, gizmo_rect.max.y), // 左下
+                        pos2(gizmo_rect.center().x, gizmo_rect.max.y), // 下中
+                        gizmo_rect.max, // 右下
+                    ];
+                    for pt in handle_pts {
+                        painter.rect_filled(
+                            Rect::from_center_size(pt, handle_size),
+                            CornerRadius::same(1),
+                            Color32::WHITE,
+                        );
+                        painter.rect_stroke(
+                            Rect::from_center_size(pt, handle_size),
+                            CornerRadius::same(1),
+                            Stroke::new(1.0, Color32::BLACK),
+                            egui::StrokeKind::Outside,
+                        );
+                    }
+
+                    // 顶部旋转控制连线与手柄 (Rotation Handle & Stem)
+                    let top_mid = pos2(gizmo_rect.center().x, gizmo_rect.min.y);
+                    let rot_handle = top_mid - vec2(0.0, 16.0);
+                    painter.line_segment([top_mid, rot_handle], Stroke::new(1.2, Theme::ACCENT_CYAN));
+                    painter.circle_filled(rot_handle, 4.0, Theme::ACCENT_CYAN);
+                    painter.circle_stroke(rot_handle, 4.0, Stroke::new(1.0, Color32::WHITE));
+
+                    // 变换参数角标 Badge
+                    if sel_clip.transform_rotation_deg.abs() > 0.01 || sel_clip.transform_flip_h || sel_clip.transform_flip_v || (sel_clip.transform_scale[0] - 1.0).abs() > 0.01 {
+                        let mut badges = Vec::new();
+                        if sel_clip.transform_rotation_deg.abs() > 0.01 {
+                            badges.push(format!("⟳ {:.0}°", sel_clip.transform_rotation_deg));
+                        }
+                        if sel_clip.transform_flip_h {
+                            badges.push("⇄ FlipH".into());
+                        }
+                        if sel_clip.transform_flip_v {
+                            badges.push("⇅ FlipV".into());
+                        }
+                        if (sel_clip.transform_scale[0] - 1.0).abs() > 0.01 {
+                            badges.push(format!("🔍 {:.2}x", sel_clip.transform_scale[0]));
+                        }
+                        painter.text(
+                            gizmo_rect.min + vec2(8.0, 8.0),
+                            egui::Align2::LEFT_TOP,
+                            badges.join(" | "),
+                            egui::FontId::monospace(10.5),
+                            Theme::ACCENT_YELLOW,
+                        );
+                    }
+                }
+            }
+
             // 画面右下角渲染分辨率
             painter.text(
                 video_inner.max - vec2(14.0, 14.0),
@@ -1163,6 +1263,40 @@ pub fn show(ui: &mut Ui, project: &mut ProjectState, state: &mut MainInterfaceUi
                                     ui.separator();
                                     if ui.button("清除淡入淡出").clicked() {
                                         state.command_input = ":fadein 0".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                });
+                                ui.menu_button("📐 画面几何变换", |ui| {
+                                    if ui.button("顺时针旋转 90° (:rotate 90)").clicked() {
+                                        state.command_input = ":rotate 90".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("逆时针旋转 90° (:rotate -90)").clicked() {
+                                        state.command_input = ":rotate -90".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    ui.separator();
+                                    if ui.button("水平翻转 (:flip h)").clicked() {
+                                        state.command_input = ":flip h".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("垂直翻转 (:flip v)").clicked() {
+                                        state.command_input = ":flip v".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    ui.separator();
+                                    if ui.button("画面缩放 1.5x (:scale_clip 1.5)").clicked() {
+                                        state.command_input = ":scale_clip 1.5".into();
+                                        state.is_command_mode = true;
+                                        ui.close();
+                                    }
+                                    if ui.button("重置几何变换 (:reset_transform)").clicked() {
+                                        state.command_input = ":reset_transform".into();
                                         state.is_command_mode = true;
                                         ui.close();
                                     }
